@@ -274,6 +274,66 @@
       padding: 0.35rem 0.8rem;
     }
 
+    /* Run / timeout strip. Muted gold like the other markers - never red,
+       which is reserved for rules. */
+    .strip-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.3rem;
+      justify-content: center;
+      margin-top: 0.3rem;
+    }
+
+    #swap-at-input {
+      width: 3.5rem;
+      background: #111;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 0.15rem 0.25rem;
+      font-size: 0.8rem;
+    }
+
+    .run-strip {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem;
+      margin-top: 0.3rem;
+      padding: 0.3rem 0.45rem;
+      border: 1px solid #c9a227;
+      border-radius: 6px;
+      color: #c9a227;
+      font-size: 0.85rem;
+    }
+
+    .run-strip .strip-fact {
+      color: #ddd;
+    }
+
+    .swap-gauge {
+      display: inline-block;
+      width: 56px;
+      height: 6px;
+      border: 1px solid #c9a227;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .swap-gauge-fill {
+      display: block;
+      height: 100%;
+      background: #c9a227;
+    }
+
+    .strip-dismiss {
+      margin-left: auto;
+      cursor: pointer;
+      text-decoration: underline;
+      font-size: 0.75rem;
+    }
+
     .bottom-section {
       margin-top: 0.4rem;
     }
@@ -334,6 +394,16 @@ DS 2"></textarea>
 
       <button id="sub-mode-btn">Sub Mode: Off</button>
     </div>
+
+    <div class="strip-controls">
+      <button id="timeout-us-btn">Timeout us (2)</button>
+      <button id="timeout-them-btn">Timeout them (2)</button>
+      <label for="swap-at-input" class="small-label">Swap at combined</label>
+      <input id="swap-at-input" type="number" min="1" step="1" value="20">
+      <button id="strip-toggle-btn">Strip: On</button>
+    </div>
+
+    <div id="run-strip" class="run-strip" hidden></div>
   </section>
 
   <!-- Layout: Court / Bench / Game Log -->
@@ -385,6 +455,11 @@ DS 2"></textarea>
       theirScore: 0,
       serving: 'us',        // 'us' | 'them'
       setNumber: 1,
+      theirRun: 0,                        // their points since our last one
+      timeoutsUsed: { us: 0, them: 0 },   // this set
+      swapAt: null,                       // normalized to the default on render
+      stripEnabled: true,
+      stripDismissedSet: null,            // set number the strip was dismissed for
       subMode: false,
       pendingSub: null,     // {group: 'court'|'bench', playerId}
       substitutions: [],    // game log: subs + set-end entries
@@ -510,6 +585,191 @@ DS 2"></textarea>
     return state.rotation[idx];
   }
 
+  // --------- Run, timeouts and the swap window ---------
+  // Everything here reports counts and arithmetic. No advice: what to do with
+  // a run, a timeout or a swap window is the coach's call.
+
+  const TIMEOUTS_PER_SET = 2;   // Rule 15.1.2
+  const DEFAULT_SWAP_AT = 20;   // combined score the coach watches for
+  const RUN_STRIP_AT = 4;       // their straight points before the strip shows
+  const PACE_MIN_POINTS = 8;    // too few points to project anything from
+  const PACE_MARGIN = 12;       // projected margin that swaps timeouts for pace
+
+  // Saved states written before these existed fall back to the defaults
+  // rather than rendering blanks.
+  function getSwapAt() {
+    const n = state.swapAt;
+    if (typeof n === 'number' && isFinite(n) && n >= 1) return Math.floor(n);
+    return DEFAULT_SWAP_AT;
+  }
+
+  function timeoutsLeft(team) {
+    const used = state.timeoutsUsed && typeof state.timeoutsUsed[team] === 'number'
+      ? state.timeoutsUsed[team] : 0;
+    return Math.max(0, TIMEOUTS_PER_SET - used);
+  }
+
+  function takeTimeout(team) {
+    if (timeoutsLeft(team) <= 0) return;
+    pushHistory();
+    if (!state.timeoutsUsed || typeof state.timeoutsUsed !== 'object') {
+      state.timeoutsUsed = { us: 0, them: 0 };
+    }
+    state.timeoutsUsed[team] = (state.timeoutsUsed[team] || 0) + 1;
+    state.substitutions.unshift({
+      kind: 'timeout',
+      team: team,
+      remaining: timeoutsLeft(team),
+      setNumber: state.setNumber,
+      score: state.ourScore + "-" + state.theirScore
+    });
+    render();
+  }
+
+  // Their consecutive points since our last one. Any point of ours ends it.
+  function updateTheirRun(team) {
+    if (typeof state.theirRun !== 'number' || !isFinite(state.theirRun)) state.theirRun = 0;
+    state.theirRun = (team === 'them') ? state.theirRun + 1 : 0;
+  }
+
+  // Projects the set from the current ratio: the leader reaches 25 and the
+  // other side scales. Nothing to project from below PACE_MIN_POINTS.
+  function paceProjection() {
+    const us = state.ourScore;
+    const them = state.theirScore;
+    if (them < PACE_MIN_POINTS) return null;
+    if (us === them) return { us: 25, them: 25, margin: 0 };
+    let projUs, projThem;
+    if (them > us) {
+      projThem = 25;
+      projUs = Math.round(us * 25 / them);
+    } else {
+      projUs = 25;
+      projThem = Math.round(them * 25 / us);
+    }
+    return { us: projUs, them: projThem, margin: Math.abs(projUs - projThem) };
+  }
+
+  // The window rolls: 20, then 40, then 60. It opens at N-2 and closes at
+  // N+2, so a server mid-run does not have to be frozen at exactly N.
+  function swapWindow() {
+    const n = getSwapAt();
+    const combined = state.ourScore + state.theirScore;
+    const target = n * Math.max(1, Math.ceil((combined - 2) / n));
+    const progress = Math.max(0, Math.min(1, (combined - (target - 5)) / 5));
+    return {
+      n: n,
+      combined: combined,
+      target: target,
+      progress: progress,
+      inWindow: combined >= target - 2 && combined <= target + 2
+    };
+  }
+
+  // Who is serving for us, stated plainly. Names stay on the device.
+  function servingFact() {
+    if (state.serving !== 'us') return '';
+    const id = state.rotation[0];
+    const player = id ? getPlayerById(id) : null;
+    if (!player) return '';
+    return `We're serving (${player.name} at position 1). ` +
+           `A swap at position 1 now ends ${player.name}'s serve.`;
+  }
+
+  function stripVisible() {
+    if (state.stripEnabled === false) return false;
+    if (state.stripDismissedSet === state.setNumber) return false;
+    return (state.theirRun || 0) >= RUN_STRIP_AT;
+  }
+
+  function resetStripForNewSet() {
+    state.theirRun = 0;
+    state.timeoutsUsed = { us: 0, them: 0 };
+    state.stripDismissedSet = null;
+  }
+
+  function setSwapAt(raw) {
+    const parsed = parseInt(raw, 10);
+    if (isNaN(parsed) || parsed < 1) { render(); return; }
+    if (parsed === getSwapAt()) return;
+    pushHistory();
+    state.swapAt = parsed;
+    render();
+  }
+
+  function toggleStrip() {
+    pushHistory();
+    state.stripEnabled = (state.stripEnabled === false);
+    render();
+  }
+
+  function dismissStrip() {
+    pushHistory();
+    state.stripDismissedSet = state.setNumber;
+    render();
+  }
+
+  function addStripSpan(strip, text, plain) {
+    const span = document.createElement('span');
+    if (plain) span.className = 'strip-fact';
+    span.textContent = text;
+    strip.appendChild(span);
+    return span;
+  }
+
+  // One line of facts: how long their run is, and either what is left in the
+  // timeout bank or where the set is heading. Never what to do about it.
+  function renderStrip() {
+    document.getElementById('timeout-us-btn').textContent = `Timeout us (${timeoutsLeft('us')})`;
+    document.getElementById('timeout-them-btn').textContent = `Timeout them (${timeoutsLeft('them')})`;
+    document.getElementById('timeout-us-btn').disabled = timeoutsLeft('us') <= 0;
+    document.getElementById('timeout-them-btn').disabled = timeoutsLeft('them') <= 0;
+
+    const toggle = document.getElementById('strip-toggle-btn');
+    toggle.textContent = state.stripEnabled === false ? 'Strip: Off' : 'Strip: On';
+    toggle.classList.toggle('toggle-on', state.stripEnabled !== false);
+
+    const swapInput = document.getElementById('swap-at-input');
+    state.swapAt = getSwapAt();
+    if (document.activeElement !== swapInput) swapInput.value = state.swapAt;
+
+    const strip = document.getElementById('run-strip');
+    strip.innerHTML = '';
+    strip.hidden = !stripVisible();
+    if (strip.hidden) return;
+
+    addStripSpan(strip, `Their run: ${state.theirRun} straight.`);
+
+    const pace = paceProjection();
+    const window = swapWindow();
+    if (pace && pace.margin >= PACE_MARGIN) {
+      // Scoreboard order, us first, to match "Us: n  Them: n" above.
+      addStripSpan(strip, `Pace ${pace.us}-${pace.them}.`);
+      addStripSpan(strip, `Combined ${window.combined}; swap at ${window.target}.`);
+    } else {
+      addStripSpan(strip, `Timeouts left: ${timeoutsLeft('us')}.`);
+    }
+
+    const gauge = document.createElement('span');
+    gauge.className = 'swap-gauge';
+    const fill = document.createElement('span');
+    fill.className = 'swap-gauge-fill';
+    fill.style.width = Math.round(window.progress * 100) + '%';
+    gauge.appendChild(fill);
+    strip.appendChild(gauge);
+
+    if (window.inWindow) addStripSpan(strip, 'In window.');
+
+    const fact = servingFact();
+    if (fact) addStripSpan(strip, fact, true);
+
+    const dismiss = document.createElement('span');
+    dismiss.className = 'strip-dismiss';
+    dismiss.textContent = 'dismiss';
+    dismiss.addEventListener('click', dismissStrip);
+    strip.appendChild(dismiss);
+  }
+
   // --------- Actions ---------
 
   function loadLineupFromTextarea() {
@@ -600,6 +860,7 @@ DS 2"></textarea>
     }
 
     incrementPointsForOnCourtPlayers();
+    updateTheirRun(team);
     render();
   }
 
@@ -681,6 +942,7 @@ DS 2"></textarea>
     state.theirScore = 0;
     state.serving = 'us';
     state.pendingSub = null;
+    resetStripForNewSet();
     render();
   }
 
@@ -780,6 +1042,7 @@ DS 2"></textarea>
     }
 
     updateUndoButton();
+    renderStrip();
 
     // Court: position layout [4,3,2,5,6,1] = top-left -> bottom-right
     const positionOrder = [4, 3, 2, 5, 6, 1];
@@ -869,6 +1132,14 @@ DS 2"></textarea>
     const subsLog = document.getElementById('subs-log-list');
     subsLog.innerHTML = '';
     state.substitutions.forEach(entry => {
+      if (entry.kind === 'timeout') {
+        const toDiv = document.createElement('div');
+        toDiv.className = 'sub-entry';
+        toDiv.textContent = `Set ${entry.setNumber} @ ${entry.score}: timeout ${entry.team} (${entry.remaining} left)`;
+        subsLog.appendChild(toDiv);
+        return;
+      }
+
       const div = document.createElement('div');
       div.className = 'sub-entry';
 
@@ -901,6 +1172,11 @@ DS 2"></textarea>
     document.getElementById('score-us-btn').addEventListener('click', () => scorePoint('us'));
     document.getElementById('score-them-btn').addEventListener('click', () => scorePoint('them'));
     document.getElementById('serving-indicator').addEventListener('click', toggleServing);
+    document.getElementById('timeout-us-btn').addEventListener('click', () => takeTimeout('us'));
+    document.getElementById('timeout-them-btn').addEventListener('click', () => takeTimeout('them'));
+    document.getElementById('strip-toggle-btn').addEventListener('click', toggleStrip);
+    document.getElementById('swap-at-input')
+      .addEventListener('change', e => setSwapAt(e.target.value));
     document.getElementById('sub-mode-btn').addEventListener('click', toggleSubMode);
     document.getElementById('new-set-btn').addEventListener('click', newSet);
     document.getElementById('reset-btn').addEventListener('click', resetApp);
