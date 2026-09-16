@@ -159,7 +159,9 @@
     #court {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      grid-auto-rows: 72px;
+      /* Grows rather than clipping: the meta line now carries the target and
+         a marker, and long names wrap. */
+      grid-auto-rows: minmax(72px, auto);
       gap: 0.25rem;
     }
 
@@ -210,6 +212,7 @@
     .player-meta {
       font-size: 0.75rem;
       opacity: 0.85;
+      line-height: 1.25;
     }
 
     #bench-list {
@@ -231,8 +234,36 @@
       margin-top: 0.1rem;
     }
 
+    /* Own line: court cells are only about 60px wide, so an inline marker
+       wraps mid-number and spills out of the cell. */
+    .target-met {
+      display: block;
+      color: #c9a227;
+    }
+
     #bench-participation {
       margin-top: 0.3rem;
+    }
+
+    .target-row {
+      display: flex;
+      align-items: center;
+      margin-top: 0.4rem;
+    }
+
+    #target-input {
+      width: 3.5rem;
+      margin-left: 0.3rem;
+      background: #111;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 0.15rem 0.25rem;
+      font-size: 0.8rem;
+    }
+
+    .target-help {
+      margin-top: 0.15rem;
     }
 
     #subs-log-list {
@@ -357,6 +388,13 @@ DS 2"></textarea>
       <h2>Bench</h2>
       <div id="bench-list"></div>
       <div id="bench-participation" class="small-label"></div>
+      <div class="target-row small-label">
+        <label for="target-input">25% target</label>
+        <input id="target-input" type="number" min="0" step="1" value="38">
+      </div>
+      <div class="small-label target-help">
+        38 clears 25% of a 3-set match that goes 26-24 every set.
+      </div>
     </div>
 
     <div class="panel">
@@ -385,6 +423,12 @@ DS 2"></textarea>
   const STORAGE_KEY_AUTO = 'vb_lineup_auto_state_v1';
   const STORAGE_KEY_SAVES = 'vb_lineup_saved_states_v1';
 
+  // Rally-points on court that clear the 25%-of-match playing requirement.
+  // A hard-fought 3-set match is about 150 rallies (three sets at 26-24);
+  // 25% of that is 37.5, so 38 clears the requirement for any match up to
+  // that length. It is a deliberate ceiling, and the coach can change it.
+  const DEFAULT_PLAYING_TIME_TARGET = 38;
+
   // --------- State management ---------
 
   function createInitialState() {
@@ -393,6 +437,7 @@ DS 2"></textarea>
       rotation: [],         // [playerId at pos1, pos2, ..., pos6]
       bench: [],            // [playerId,...]
       setParticipants: [],  // [playerId,...] everyone who has been on court this set
+      playingTimeTarget: DEFAULT_PLAYING_TIME_TARGET, // rally-points that clear 25%
       ourScore: 0,
       theirScore: 0,
       serving: 'us',        // 'us' | 'them'
@@ -538,6 +583,33 @@ DS 2"></textarea>
     return state.bench.filter(id => id && played.indexOf(id) === -1);
   }
 
+  // --------- 25% playing-time target ---------
+
+  // Saved states written before this existed have no target, so fall back to
+  // the default rather than showing "/ undefined".
+  function getPlayingTimeTarget() {
+    const t = state.playingTimeTarget;
+    if (typeof t === 'number' && isFinite(t) && t >= 0) return t;
+    return DEFAULT_PLAYING_TIME_TARGET;
+  }
+
+  function playersBelowTarget() {
+    const target = getPlayingTimeTarget();
+    return state.players.filter(p => p.points < target);
+  }
+
+  function setPlayingTimeTarget(raw) {
+    const parsed = parseInt(raw, 10);
+    if (isNaN(parsed) || parsed < 0) {
+      render();  // put the input back to the value actually in use
+      return;
+    }
+    if (parsed === getPlayingTimeTarget()) return;
+    pushHistory();
+    state.playingTimeTarget = parsed;
+    render();
+  }
+
   // rotation index 0..5 => positions 1..6
   function getPlayerIdAtPosition(posNumber) {
     const idx = posNumber - 1;
@@ -585,7 +657,9 @@ DS 2"></textarea>
     state.bench = ids.slice(6);
 
     // Player ids are reassigned here, so participation restarts from the
-    // six now on court.
+    // six now on court. playingTimeTarget is deliberately left alone: this
+    // button is also how a coach fixes a typo or adds a late arrival
+    // mid-match, and silently resetting their target would surprise them.
     state.setParticipants = state.rotation.slice();
 
     state.pendingSub = null;
@@ -704,17 +778,34 @@ DS 2"></textarea>
   }
 
   function newSet() {
-    // CYC Rule 20.1: report bench players who never entered this set. The
-    // coach decides; this never blocks ending the set.
+    // Report what the rulebook cares about: who never entered this set, and
+    // who is short of the playing-time target. The coach decides; this never
+    // blocks ending the set.
+    const paragraphs = [];
+
     const missing = benchPlayersNotYetIn();
     if (missing.length > 0) {
       const names = missing.map(getPlayerName).join(', ');
       const plural = missing.length === 1 ? 'player who' : 'players who';
-      if (!confirm(
-        `Set ${state.setNumber} ended with ${missing.length} ${plural} did not enter: ${names}.\n\n` +
-        `CYC Rule 20.1: all eligible bench players must participate in each set.\n\n` +
-        `Continue to next set?`
-      )) {
+      paragraphs.push(
+        `Set ${state.setNumber} ended with ${missing.length} ${plural} did not enter: ${names}.`
+      );
+      paragraphs.push(
+        `CYC Rule 20.1: all eligible bench players must participate in each set.`
+      );
+    }
+
+    const target = getPlayingTimeTarget();
+    const below = playersBelowTarget();
+    if (below.length > 0) {
+      const detail = below
+        .map(p => `${p.name} ${p.points} (needs ${target - p.points})`)
+        .join(', ');
+      paragraphs.push(`Below the 25% target (${target}): ${detail}.`);
+    }
+
+    if (paragraphs.length > 0) {
+      if (!confirm(paragraphs.join('\n\n') + '\n\nContinue to next set?')) {
         return;
       }
     }
@@ -814,8 +905,26 @@ DS 2"></textarea>
 
   // --------- Rendering ---------
 
+  // "Pts: 12 / 38", with a marker once the player has cleared the target.
+  function buildPlayerMeta(player) {
+    const target = getPlayingTimeTarget();
+    const metaDiv = document.createElement('div');
+    metaDiv.className = 'player-meta';
+    metaDiv.textContent = "Pts: " + player.points + "/" + target;
+    if (player.points >= target) {
+      const metSpan = document.createElement('span');
+      metSpan.className = 'target-met';
+      metSpan.textContent = '25% ✓';
+      metaDiv.appendChild(metSpan);
+    }
+    return metaDiv;
+  }
+
   function render() {
     syncSetParticipants();
+    // Normalize so legacy states persist a real target instead of nothing.
+    state.playingTimeTarget = getPlayingTimeTarget();
+    document.getElementById('target-input').value = state.playingTimeTarget;
 
     document.getElementById('our-score').textContent = state.ourScore;
     document.getElementById('their-score').textContent = state.theirScore;
@@ -874,9 +983,7 @@ DS 2"></textarea>
         nameDiv.className = 'player-name';
         nameDiv.textContent = player.name;
 
-        const metaDiv = document.createElement('div');
-        metaDiv.className = 'player-meta';
-        metaDiv.textContent = "Pts: " + player.points;
+        const metaDiv = buildPlayerMeta(player);
 
         card.appendChild(nameDiv);
         card.appendChild(metaDiv);
@@ -911,9 +1018,7 @@ DS 2"></textarea>
       nameDiv.className = 'player-name';
       nameDiv.textContent = player.name;
 
-      const metaDiv = document.createElement('div');
-      metaDiv.className = 'player-meta';
-      metaDiv.textContent = "Pts: " + player.points;
+      const metaDiv = buildPlayerMeta(player);
 
       card.appendChild(nameDiv);
       card.appendChild(metaDiv);
@@ -981,6 +1086,8 @@ DS 2"></textarea>
     document.getElementById('new-set-btn').addEventListener('click', newSet);
     document.getElementById('reset-btn').addEventListener('click', resetApp);
     document.getElementById('undo-btn').addEventListener('click', undoLast);
+    document.getElementById('target-input')
+      .addEventListener('change', e => setPlayingTimeTarget(e.target.value));
 
     document.getElementById('save-game-btn').addEventListener('click', saveCurrentGameAsSnapshot);
     document.getElementById('load-game-btn').addEventListener('click', loadSelectedSavedGame);
