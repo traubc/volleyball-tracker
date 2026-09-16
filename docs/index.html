@@ -283,6 +283,43 @@
       color: #c9a227;
     }
 
+    /* Serving tiers: the coach's prior, shown beside the read. Never red. */
+    .medal {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      border: 1px solid #111;
+      cursor: pointer;
+      flex: none;
+    }
+
+    .medal-gold { background: #c9a227; }
+    .medal-silver { background: #9aa0a6; }
+    .medal-bronze { background: #8c6239; }
+
+    .player-card .medal {
+      position: relative;
+      top: 1px;
+      margin-left: 0.25rem;
+    }
+
+    #next-up {
+      margin-top: 0.2rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    #serve-cap-select {
+      font-size: 0.8rem;
+      background: #111;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+    }
+
     .saved-controls {
       display: flex;
       flex-wrap: wrap;
@@ -354,6 +391,7 @@ DS 2"></textarea>
         <span id="set-chance" class="small-label" hidden></span>
       </div>
     </div>
+    <div id="next-up" class="small-label"></div>
 
     <div class="controls-row">
 
@@ -396,6 +434,11 @@ DS 2"></textarea>
         <button id="delete-game-btn">Delete</button>
         <button id="export-rallies-btn">Export rally log</button>
         <button id="chance-toggle-btn">Set chance: Off</button>
+        <label for="serve-cap-select" class="small-label">Serve cap</label>
+        <select id="serve-cap-select">
+          <option value="none">none</option>
+          <option value="5">5 points</option>
+        </select>
         <button id="reset-btn" class="danger">Reset App</button>
       </div>
     </div>
@@ -532,7 +575,6 @@ DS 2"></textarea>
   // The array is created on demand rather than in createInitialState, so a
   // state saved before this existed starts logging on its next point.
 
-  const CHANCE_PRIOR = 10;      // pseudo-points pulling the rate toward even
   const PACE_MIN_TOTAL = 8;     // total points before a projection means much
   const SET_TARGET = 25;
 
@@ -560,45 +602,209 @@ DS 2"></textarea>
     return p.jersey ? String(p.jersey) : ('id:' + id);
   }
 
-  // Our share of points this set, shrunk toward even so an early 3-0 does not
-  // read as a rout.
-  function shrunkPointRate(our, them) {
-    return (our + CHANCE_PRIOR / 2) / (our + them + CHANCE_PRIOR);
+  // --------- Serving tiers and the structural set chance ---------
+  // The model is ported from volleyball-assistant/lineup.py: shrink(),
+  // expected_serve_points(), and its solid/rough/guess thresholds. The
+  // numbers below are that file's, not new ones.
+
+  // The coach's stated prior about practice serving, not the app's judgment
+  // about a player. Each tier is a starting serve-in rate and how many
+  // serves of real data it takes to talk the model out of it.
+  const SERVE_TIERS = {
+    gold:   { rate: 0.90, weight: 20 },   // strong
+    silver: { rate: 0.75, weight: 12 },   // variable
+    bronze: { rate: 0.55, weight: 8 }     // unpredictable
+  };
+  const TIER_CYCLE = ['gold', 'silver', 'bronze'];
+  const DEFAULT_TIER = 'silver';
+
+  const MAX_SERVE_RATE = 0.92;   // lineup.py: nobody at this age serves better
+  const SERVE_CAP_POINTS = 5;    // lineup.py, CYC 12.4.8 / 12.4.9
+  const TEAM_RATE_PRIOR = 20;    // weight behind both team-level rates
+  const Q_WIN_RALLY_PRIOR = 0.5; // P(win the rally | our serve landed)
+
+  // Prior for P(we win the rally when they serve). It is NOT 0.5: our own
+  // serve is worth silver-rate x Q_WIN_RALLY_PRIOR = 0.375, so pairing that
+  // with a flat 0.5 here would assume the opposing team never misses a serve
+  // while we miss a quarter of ours, and a default roster would read as a 17%
+  // underdog before a ball is struck. Mirroring our own model instead makes
+  // an unknown team exactly even at 0-0, which is the honest starting point.
+  // Real rallies outweigh this within a set anyway.
+  function sideoutPrior() {
+    return 1 - Math.min(SERVE_TIERS[DEFAULT_TIER].rate, MAX_SERVE_RATE) * Q_WIN_RALLY_PRIOR;
+  }
+  const CONF_SOLID = 40;         // lineup.py serve_confidence thresholds
+  const CONF_ROUGH = 15;
+  const SET_CHANCE_SIMS = 2000;
+  const SIM_RALLY_GUARD = 600;   // a set cannot really run this long
+
+  // lineup.py shrink(): pull an observed rate toward a prior, weighted by
+  // sample size. No attempts means you get the prior back.
+  function shrink(made, attempts, priorRate, priorWeight) {
+    if (!(attempts > 0)) return priorRate;
+    return (made + priorWeight * priorRate) / (attempts + priorWeight);
   }
 
-  // Probability we reach 25 first, win by two, if every rally is won with
-  // probability p. The deuce tail is the closed form rather than a recursion
-  // with a cap, so it is exact however long the set runs.
-  function setWinProbability(our, them, p) {
-    if (!(p >= 0)) p = 0;
-    if (p > 1) p = 1;
-    const q = 1 - p;
-    const memo = {};
-
-    function deuce(diff) {
-      const denom = p * p + q * q;
-      const even = denom === 0 ? 0.5 : (p * p) / denom;
-      if (diff === 0) return even;
-      if (diff >= 1) return p + q * even;
-      return p * even;
-    }
-
-    function f(a, b) {
-      if (a >= SET_TARGET && a - b >= 2) return 1;
-      if (b >= SET_TARGET && b - a >= 2) return 0;
-      if (a >= SET_TARGET - 1 && b >= SET_TARGET - 1) return deuce(a - b);
-      const key = a + ',' + b;
-      if (key in memo) return memo[key];
-      const v = p * f(a + 1, b) + q * f(a, b + 1);
-      memo[key] = v;
-      return v;
-    }
-
-    return f(our, them);
+  // lineup.py expected_serve_points(): the server has to land it and the team
+  // has to win the rally. Uncapped that sum is r/(1-r); under a cap it simply
+  // stops at k = cap, which is why a capped division values a big server less.
+  function expectedServePoints(pIn, q, cap) {
+    const r = Math.min(pIn, MAX_SERVE_RATE) * q;
+    if (!(r > 0)) return 0;
+    if (cap === null || cap === undefined) return r < 1 ? r / (1 - r) : Infinity;
+    let total = 0;
+    for (let k = 1; k <= cap; k++) total += Math.pow(r, k);
+    return total;
   }
 
-  function setChance(our, them) {
-    return setWinProbability(our, them, shrunkPointRate(our, them));
+  function serveConfidence(attempts) {
+    if (attempts >= CONF_SOLID) return 'solid';
+    if (attempts >= CONF_ROUGH) return 'rough';
+    return 'guess';
+  }
+
+  function tierOf(player) {
+    if (player && SERVE_TIERS[player.tier]) return player.tier;
+    return DEFAULT_TIER;
+  }
+
+  function getServeCap() {
+    return state.serveCap === SERVE_CAP_POINTS ? SERVE_CAP_POINTS : null;
+  }
+
+  function setServeCap(raw) {
+    const cap = (String(raw) === String(SERVE_CAP_POINTS)) ? SERVE_CAP_POINTS : null;
+    if (cap === getServeCap()) return;
+    pushHistory();
+    state.serveCap = cap;
+    render();
+  }
+
+  function cycleServeTier(playerId) {
+    const player = getPlayerById(playerId);
+    if (!player) return;
+    pushHistory();
+    const next = (TIER_CYCLE.indexOf(tierOf(player)) + 1) % TIER_CYCLE.length;
+    player.tier = TIER_CYCLE[next];
+    render();
+  }
+
+  // Every rally we served is one serve by ourServerId; serveMiss marks a miss.
+  // Rallies they served give the sideout rate. Their own serve-in rate is not
+  // tracked, so it is folded into the sideout number rather than modelled.
+  function serveStatsFromLog() {
+    const perPlayer = {};
+    let teamIn = 0, teamWonAfterIn = 0, theirServes = 0, sideouts = 0;
+
+    rallyLog().forEach(r => {
+      if (r.serving === 'us') {
+        const id = r.ourServerId;
+        if (id) {
+          if (!perPlayer[id]) perPlayer[id] = { attempts: 0, in: 0 };
+          perPlayer[id].attempts += 1;
+          if (!r.serveMiss) perPlayer[id].in += 1;
+        }
+        if (!r.serveMiss) {
+          teamIn += 1;
+          if (r.winner === 'us') teamWonAfterIn += 1;
+        }
+      } else if (r.serving === 'them') {
+        theirServes += 1;
+        if (r.winner === 'us') sideouts += 1;
+      }
+    });
+
+    return {
+      perPlayer: perPlayer,
+      qWinRallyGivenIn: shrink(teamWonAfterIn, teamIn, Q_WIN_RALLY_PRIOR, TEAM_RATE_PRIOR),
+      pSideout: shrink(sideouts, theirServes, sideoutPrior(), TEAM_RATE_PRIOR)
+    };
+  }
+
+  function serveRatingFor(playerId, stats) {
+    const player = getPlayerById(playerId);
+    const tier = SERVE_TIERS[tierOf(player)];
+    const seen = (stats.perPlayer && stats.perPlayer[playerId]) || { attempts: 0, in: 0 };
+    const pIn = shrink(seen.in, seen.attempts, tier.rate, tier.weight);
+    return {
+      id: playerId,
+      tier: tierOf(player),
+      attempts: seen.attempts,
+      pIn: pIn,
+      r: Math.min(pIn, MAX_SERVE_RATE) * stats.qWinRallyGivenIn,
+      expectedPoints: expectedServePoints(pIn, stats.qWinRallyGivenIn, getServeCap()),
+      confidence: serveConfidence(seen.attempts)
+    };
+  }
+
+  // Position 1 serves next if we have the ball; otherwise the rotation turns
+  // once on the sideout and position 2 is up.
+  function upcomingServerIds() {
+    const rotation = state.rotation.filter(id => id);
+    if (!rotation.length) return [];
+    const start = state.serving === 'us' ? 0 : 1;
+    const out = [];
+    for (let k = 0; k < 3 && k < rotation.length; k++) {
+      out.push(rotation[(start + k) % rotation.length]);
+    }
+    return out;
+  }
+
+  // Plays the rest of the set out, rally by rally: our serve uses that
+  // server's r, their serve uses the sideout rate. Their serve is assumed to
+  // land every time, because nothing in the log measures it.
+  function simulateSetChance(rng, start) {
+    const random = rng || Math.random;
+    const from = start || {};
+    const stats = serveStatsFromLog();
+    const cap = getServeCap();
+    const rotation = (from.rotation || state.rotation).filter(id => id);
+    const rValues = rotation.length
+      ? rotation.map(id => serveRatingFor(id, stats).r)
+      : [Math.min(SERVE_TIERS[DEFAULT_TIER].rate, MAX_SERVE_RATE) * stats.qWinRallyGivenIn];
+    const pSideout = stats.pSideout;
+    const startOur = from.ourScore === undefined ? state.ourScore : from.ourScore;
+    const startThem = from.theirScore === undefined ? state.theirScore : from.theirScore;
+    const startServing = from.serving || state.serving;
+
+    function decided(a, b) {
+      return (a >= SET_TARGET && a - b >= 2) || (b >= SET_TARGET && b - a >= 2);
+    }
+
+    let wins = 0;
+    for (let sim = 0; sim < SET_CHANCE_SIMS; sim++) {
+      let our = startOur, them = startThem;
+      let serving = startServing;
+      let offset = 0, ourRun = 0, theirRun = 0, guard = 0;
+
+      while (!decided(our, them) && guard++ < SIM_RALLY_GUARD) {
+        if (serving === 'us') {
+          if (random() < rValues[offset % rValues.length]) {
+            our += 1; ourRun += 1;
+            if (cap && ourRun >= cap) { serving = 'them'; ourRun = 0; theirRun = 0; }
+          } else {
+            them += 1; serving = 'them'; ourRun = 0; theirRun = 0;
+          }
+        } else {
+          if (random() < pSideout) {
+            our += 1; serving = 'us'; offset = (offset + 1) % rValues.length;
+            ourRun = 0; theirRun = 0;
+          } else {
+            them += 1; theirRun += 1;
+            if (cap && theirRun >= cap) {
+              serving = 'us'; offset = (offset + 1) % rValues.length;
+              ourRun = 0; theirRun = 0;
+            }
+          }
+        }
+      }
+      if (our > them) wins += 1;
+    }
+    return wins / SET_CHANCE_SIMS;
+  }
+
+  function setChance(start) {
+    return simulateSetChance(undefined, start);
   }
 
   // Straight-line projection: the leader reaches 25, the other side scales.
@@ -662,7 +868,16 @@ DS 2"></textarea>
       t: t,
       setElapsedMs: setStart === null ? 0 : t - setStart,
       matchElapsedMs: matchStart === null ? 0 : t - matchStart,
-      pWin: setChance(ourScore, theirScore),
+      // Chance from the position this point leaves us in, which is why the
+      // rotation and serve are projected forward here rather than read back.
+      pWin: setChance({
+        ourScore: ourScore,
+        theirScore: theirScore,
+        serving: team,
+        rotation: (team === 'us' && servingNow === 'them')
+          ? state.rotation.slice(1).concat([state.rotation[0]])
+          : state.rotation.slice()
+      }),
       pace: paceFrom(ourScore, theirScore)
     });
   }
@@ -717,14 +932,21 @@ DS 2"></textarea>
   function buildRallyExport(now) {
     const log = rallyLog();
     const totals = pointsOnCourtFromLog();
+    const serveStats = serveStatsFromLog();
     return {
       exportedAt: new Date(typeof now === 'number' ? now : Date.now()).toISOString(),
       totalRallies: log.length,
       sets: log.length ? log[log.length - 1].set : 0,
-      players: state.players.map(p => ({
-        ref: p.jersey ? String(p.jersey) : ('id:' + p.id),
-        pointsOnCourt: totals[p.id] || 0
-      })),
+      players: state.players.map(p => {
+        const seen = serveStats.perPlayer[p.id] || { attempts: 0, in: 0 };
+        return {
+          ref: p.jersey ? String(p.jersey) : ('id:' + p.id),
+          tier: tierOf(p),                 // a category, never an identity
+          pointsOnCourt: totals[p.id] || 0,
+          serveAttempts: seen.attempts,
+          servesIn: seen.in
+        };
+      }),
       rallies: log.map(r => ({
         set: r.set,
         ourScore: r.ourScore,
@@ -807,14 +1029,19 @@ DS 2"></textarea>
       const name = parsed.name;
       let existing = oldPlayersByName[name];
       if (!existing) {
-        existing = { id: nextId, name: name, points: 0, jersey: parsed.jersey };
+        existing = {
+          id: nextId, name: name, points: 0,
+          jersey: parsed.jersey, tier: DEFAULT_TIER
+        };
       } else {
         existing = {
           id: nextId,
           name: existing.name,
           points: existing.points,
           // a number typed this time wins; otherwise keep what was there
-          jersey: parsed.jersey || existing.jersey || null
+          jersey: parsed.jersey || existing.jersey || null,
+          // the coach's tier is theirs; a lineup reload must not reset it
+          tier: existing.tier || DEFAULT_TIER
         };
       }
       newPlayers.push(existing);
@@ -1186,8 +1413,68 @@ DS 2"></textarea>
     readout.textContent = `Set ${setPart} · Match ${formatClock(now - matchStart)}`;
   }
 
+  // Medals are attached after the cards are built rather than inside the card
+  // code, so the tier feature stays in one place.
+  function decoratePlayerCardsWithMedals() {
+    const cards = document.querySelectorAll('.player-card[data-player-id]');
+    Array.prototype.forEach.call(cards, card => {
+      const id = parseInt(card.dataset.playerId, 10);
+      const player = getPlayerById(id);
+      if (!player) return;
+      const dot = document.createElement('span');
+      const tier = tierOf(player);
+      dot.className = 'medal medal-' + tier;
+      dot.title = 'serving tier: ' + tier;
+      dot.addEventListener('click', e => {
+        e.stopPropagation();   // not a substitution tap
+        cycleServeTier(id);
+      });
+      const nameDiv = card.querySelector('.player-name');
+      (nameDiv || card).appendChild(dot);
+    });
+  }
+
+  // "Next up: #7 about 1.4 points (guess) - #12 about 0.8 (guess)". Counts and
+  // the coach's own medal, side by side. No advice about either.
+  function renderNextUp() {
+    const line = document.getElementById('next-up');
+    line.innerHTML = '';
+    const ids = upcomingServerIds();
+    if (!ids.length) return;
+
+    const stats = serveStatsFromLog();
+    const label = document.createElement('span');
+    label.textContent = 'Next up:';
+    line.appendChild(label);
+
+    ids.forEach((id, index) => {
+      const player = getPlayerById(id);
+      if (!player) return;
+      const rating = serveRatingFor(id, stats);
+
+      const chunk = document.createElement('span');
+      const dot = document.createElement('span');
+      dot.className = 'medal medal-' + rating.tier;
+      dot.title = 'serving tier: ' + rating.tier;
+      chunk.appendChild(dot);
+
+      const who = player.jersey ? ('#' + player.jersey) : player.name;
+      const text = document.createElement('span');
+      text.textContent = ` ${who} about ${rating.expectedPoints.toFixed(1)}` +
+        `${index === 0 ? ' points' : ''} (${rating.confidence})` +
+        (index < ids.length - 1 ? ' ·' : '');
+      chunk.appendChild(text);
+      line.appendChild(chunk);
+    });
+  }
+
   function renderRallyExtras() {
     renderClock();
+    decoratePlayerCardsWithMedals();
+    renderNextUp();
+
+    const capSelect = document.getElementById('serve-cap-select');
+    capSelect.value = getServeCap() === null ? 'none' : String(SERVE_CAP_POINTS);
 
     const tap = document.getElementById('serve-miss-tap');
     const available = serveMissAvailable();
@@ -1206,7 +1493,13 @@ DS 2"></textarea>
       chance.textContent = '';
     } else {
       chance.hidden = false;
-      const pct = Math.round(setChance(state.ourScore, state.theirScore) * 100);
+      // The last record already holds the chance from this exact position, so
+      // reuse it rather than running two thousand more simulations per click.
+      const last = lastRally();
+      const matches = last && last.set === state.setNumber &&
+        last.ourScore === state.ourScore && last.theirScore === state.theirScore &&
+        typeof last.pWin === 'number';
+      const pct = Math.round((matches ? last.pWin : setChance()) * 100);
       chance.textContent = `Set chance ${pct}% (${chanceLabel(played)})`;
     }
   }
@@ -1221,6 +1514,8 @@ DS 2"></textarea>
     document.getElementById('serve-miss-tap').addEventListener('click', toggleServeMiss);
     document.getElementById('chance-toggle-btn').addEventListener('click', toggleSetChance);
     document.getElementById('export-rallies-btn').addEventListener('click', exportRallyLog);
+    document.getElementById('serve-cap-select')
+      .addEventListener('change', e => setServeCap(e.target.value));
     // The set clock is wall-clock, so it moves without any state change.
     setInterval(renderClock, 1000);
     document.getElementById('rotate-forward-btn').addEventListener('click', rotateForward);
