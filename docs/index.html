@@ -309,6 +309,40 @@
       font-weight: 600;
     }
 
+    /* A long run by one server: bigger, gold, same accent as the other
+       markers. Prominence only - it never blocks or prompts. */
+    .opp-run {
+      font-size: 1.1rem;
+      color: #c9a227;
+    }
+
+    .opp-run .opp-jersey {
+      font-size: 1.1rem;
+    }
+
+    .opp-run-count {
+      font-weight: 700;
+    }
+
+    #opp-order-row {
+      margin-top: 0.3rem;
+    }
+
+    .opp-slot-input {
+      width: 2.6rem;
+      background: #111;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 0.15rem 0.2rem;
+      font-size: 0.8rem;
+      text-align: center;
+    }
+
+    .opp-slot-input.serving-slot {
+      border-color: #0e8a3a;
+    }
+
     .opp-link {
       color: #7fb2ff;
       font-size: 0.7rem;
@@ -406,8 +440,10 @@ DS 2"></textarea>
         <input id="opponent-name" type="text" placeholder="Team name" maxlength="40">
       </div>
       <div id="opp-server-control" class="opp-row small-label"></div>
+      <button id="opp-order-btn">Their order</button>
       <button id="opponents-btn">Opponents</button>
     </div>
+    <div id="opp-order-row" class="opp-row" hidden></div>
     <div id="opp-carried-note" class="small-label"></div>
     <div id="opp-conceded" class="small-label"></div>
     <div id="opponents-panel" class="opp-panel" hidden></div>
@@ -474,12 +510,18 @@ DS 2"></textarea>
   // Opponent data is about other people's kids: jersey numbers, team name,
   // dates and counts only. Never a name field for an opposing player, and
   // nothing leaves this device.
+  // Slots are positions first and jerseys second. The six rotation slots exist
+  // as soon as they serve, whether or not anyone knows the numbers, so points
+  // are attributed to the slot index. A jersey is an optional label on a slot,
+  // which is why filling one in later back-fills everything already recorded
+  // against that slot.
   function createEmptyOpponent() {
     return {
       name: '',                                   // team name, not a person
-      order: [null, null, null, null, null, null], // their serving order, jerseys
+      order: [null, null, null, null, null, null], // optional jersey per slot
       serverIdx: null,                            // slot currently serving
-      conceded: {}                                // jersey -> points this set
+      conceded: {},                               // slot index -> points this set
+      run: 0                                      // their straight points, this serve
     };
   }
 
@@ -682,6 +724,7 @@ DS 2"></textarea>
         }
       }
       state.ourScore += 1;
+      normalizeOpponent().run = 0;   // any point of ours ends their run
     } else {
       if (state.serving === 'us') {
         // we served, lost rally -> they get serve, no rotation for us.
@@ -786,6 +829,7 @@ DS 2"></textarea>
     }
     opponent.conceded = {};
     opponent.serverIdx = null;
+    opponent.run = 0;
     editingOppSlot = false;
 
     // Advance to next set and reset scores
@@ -881,6 +925,7 @@ DS 2"></textarea>
   // edit box is not a game event and should not land on the undo stack.
   let opponentsPanelOpen = false;
   let editingOppSlot = false;
+  let oppOrderRowOpen = false;
 
   // Saved states written before this existed have no opponent, and a partly
   // written one should not take the app down courtside.
@@ -899,8 +944,25 @@ DS 2"></textarea>
     }
     if (!o.conceded || typeof o.conceded !== 'object' || Array.isArray(o.conceded)) {
       o.conceded = {};
+    } else {
+      // Keys are slot indexes. Drop anything else so a stray key cannot show
+      // up as a phantom position.
+      Object.keys(o.conceded).forEach(k => {
+        const n = Number(k);
+        if (!Number.isInteger(n) || n < 0 || n > 5 || typeof o.conceded[k] !== 'number') {
+          delete o.conceded[k];
+        }
+      });
     }
+    if (typeof o.run !== 'number' || !isFinite(o.run) || o.run < 0) o.run = 0;
     return o;
+  }
+
+  // "#12" once known, "#? (position 3)" until then. Their serving slots are
+  // numbered 1-6 in serving order.
+  function oppSlotLabel(o, slot) {
+    const jersey = o.order[slot];
+    return jersey ? ('#' + jersey) : ('#? (position ' + (slot + 1) + ')');
   }
 
   // Jerseys are numbers. Strip anything else so "#12" and "12" are one key.
@@ -924,26 +986,36 @@ DS 2"></textarea>
   function advanceOppServer() {
     const o = normalizeOpponent();
     o.serverIdx = (o.serverIdx === null) ? 0 : (o.serverIdx + 1) % 6;
+    o.run = 0;  // new server, new run
   }
 
+  // Credited to the slot, so it works whether or not the jersey is known yet.
   function creditOppPoint() {
     const o = normalizeOpponent();
-    const jersey = currentOppJersey();
-    if (!jersey) return;  // unknown server: count it for nobody rather than guess
-    o.conceded[jersey] = (o.conceded[jersey] || 0) + 1;
+    if (o.serverIdx === null) return;
+    const key = String(o.serverIdx);
+    o.conceded[key] = (o.conceded[key] || 0) + 1;
+    o.run += 1;
   }
 
-  function setOppServerJersey(raw) {
+  // Their current server has scored this many straight. At 3 the control gets
+  // prominent so the number is easy to enter exactly when it starts mattering.
+  function oppRunIsNotable() {
+    return normalizeOpponent().run >= 3;
+  }
+
+  // Labels one slot. Points already recorded against that slot now display
+  // under this number; nothing needs moving, because the key was the slot.
+  function setSlotJersey(slot, raw) {
     const o = normalizeOpponent();
-    if (o.serverIdx === null) return;
+    if (!Number.isInteger(slot) || slot < 0 || slot > 5) return;
     const jersey = cleanJersey(raw);
     editingOppSlot = false;
     if (!jersey) { render(); return; }         // reject empty, put the UI back
-    const previous = o.order[o.serverIdx];
+    const previous = o.order[slot];
     if (previous === jersey) { render(); return; }
 
     pushHistory();
-    const slot = o.serverIdx;
     o.order[slot] = jersey;
     // Their subs enter in the same position (15.3.2), so a slot changing
     // mid-set is normal. Log it rather than silently overwriting.
@@ -958,6 +1030,12 @@ DS 2"></textarea>
       });
     }
     render();
+  }
+
+  function setOppServerJersey(raw) {
+    const o = normalizeOpponent();
+    if (o.serverIdx === null) return;
+    setSlotJersey(o.serverIdx, raw);
   }
 
   function setOpponentName(raw) {
@@ -1171,12 +1249,29 @@ DS 2"></textarea>
   // then it would be a guess.
   function buildOppServerControl(control, o) {
     control.innerHTML = '';
+    control.classList.remove('opp-run');
     if (state.serving !== 'them' || o.serverIdx === null) return;
 
+    const notable = oppRunIsNotable();
+    if (notable) control.classList.add('opp-run');
+
     const jersey = o.order[o.serverIdx];
+    const shown = document.createElement('span');
+    shown.className = 'opp-jersey';
+    shown.textContent = 'Their server: ' + oppSlotLabel(o, o.serverIdx);
+    control.appendChild(shown);
+
+    // The count is the message. No instruction to the coach.
+    if (notable) {
+      const run = document.createElement('span');
+      run.className = 'opp-run-count';
+      run.textContent = ': ' + o.run + ' straight';
+      control.appendChild(run);
+    }
+
+    // Unknown slot, or correcting a known one: the box is right here, so
+    // entry is a tap on the current slot rather than a prompt.
     if (!jersey || editingOppSlot) {
-      const label = document.createElement('span');
-      label.textContent = 'Their server: #';
       const input = document.createElement('input');
       input.id = 'opp-server-input';
       input.type = 'text';
@@ -1184,19 +1279,13 @@ DS 2"></textarea>
       input.value = jersey || '';
       input.addEventListener('change', e => setOppServerJersey(e.target.value));
       input.addEventListener('blur', e => setOppServerJersey(e.target.value));
-      control.appendChild(label);
       control.appendChild(input);
       return;
     }
 
-    const shown = document.createElement('span');
-    shown.className = 'opp-jersey';
-    shown.textContent = 'Their server: #' + jersey;
-    control.appendChild(shown);
-
     if (oppOrderComplete()) {
       const nextSpan = document.createElement('span');
-      nextSpan.textContent = 'next #' + o.order[(o.serverIdx + 1) % 6];
+      nextSpan.textContent = 'next ' + oppSlotLabel(o, (o.serverIdx + 1) % 6);
       control.appendChild(nextSpan);
     }
 
@@ -1205,6 +1294,28 @@ DS 2"></textarea>
     edit.textContent = 'wrong number?';
     edit.addEventListener('click', () => { editingOppSlot = true; render(); });
     control.appendChild(edit);
+  }
+
+  // Six fields for the whole serving order, for a coach who has their lineup
+  // sheet at the start of a set. Entirely optional.
+  function buildOppOrderRow(row, o) {
+    row.innerHTML = '';
+    const label = document.createElement('span');
+    label.className = 'small-label';
+    label.textContent = 'Their serving order';
+    row.appendChild(label);
+
+    for (let slot = 0; slot < 6; slot++) {
+      const input = document.createElement('input');
+      input.className = 'opp-slot-input';
+      input.type = 'text';
+      input.inputMode = 'numeric';
+      input.placeholder = String(slot + 1);
+      input.value = o.order[slot] || '';
+      if (o.serverIdx === slot) input.classList.add('serving-slot');
+      input.addEventListener('change', e => setSlotJersey(slot, e.target.value));
+      row.appendChild(input);
+    }
   }
 
   // Reports jersey numbers and counts. No evaluation of the opposing players.
@@ -1223,17 +1334,26 @@ DS 2"></textarea>
       buildOppServerControl(control, o);
     }
 
+    const orderRow = document.getElementById('opp-order-row');
+    orderRow.hidden = !oppOrderRowOpen;
+    const typingSlot = !!(active && active.classList && active.classList.contains('opp-slot-input'));
+    if (oppOrderRowOpen && !typingSlot) {
+      buildOppOrderRow(orderRow, o);
+    }
+
     const carried = document.getElementById('opp-carried-note');
     carried.textContent = (o.carriedFrom && o.order.some(j => j !== null))
       ? `Their order carried from set ${o.carriedFrom}; edit if they changed it.`
       : '';
 
-    // Points they scored while each jersey served, this set.
+    // Points they scored while each slot served, this set. Keyed by slot, so
+    // a slot with no jersey yet still shows its count.
     const conceded = document.getElementById('opp-conceded');
     const parts = [];
-    o.order.forEach(jersey => {
-      if (jersey && o.conceded[jersey]) parts.push('#' + jersey + ' ' + o.conceded[jersey]);
-    });
+    for (let slot = 0; slot < 6; slot++) {
+      const points = o.conceded[String(slot)];
+      if (points) parts.push(oppSlotLabel(o, slot) + ' ' + points);
+    }
     conceded.textContent = parts.length
       ? 'Their points by server: ' + parts.join(' · ')
       : '';
@@ -1298,6 +1418,10 @@ DS 2"></textarea>
       .addEventListener('change', e => setOpponentName(e.target.value));
     document.getElementById('opponent-name')
       .addEventListener('blur', e => setOpponentName(e.target.value));
+    document.getElementById('opp-order-btn').addEventListener('click', () => {
+      oppOrderRowOpen = !oppOrderRowOpen;
+      render();
+    });
     document.getElementById('opponents-btn').addEventListener('click', () => {
       opponentsPanelOpen = !opponentsPanelOpen;
       render();
