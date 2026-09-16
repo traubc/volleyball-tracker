@@ -277,6 +277,68 @@
     .bottom-section {
       margin-top: 0.4rem;
     }
+
+    /* Opponent serving rotation. Jersey numbers only - never names. */
+    .opp-row {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      flex-wrap: wrap;
+    }
+
+    #opponent-name,
+    #opp-server-input {
+      background: #111;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 0.15rem 0.3rem;
+      font-size: 0.8rem;
+    }
+
+    #opponent-name {
+      width: 9rem;
+    }
+
+    #opp-server-input {
+      width: 3.5rem;
+    }
+
+    .opp-jersey {
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    .opp-link {
+      color: #7fb2ff;
+      font-size: 0.7rem;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    #opp-carried-note,
+    #opp-conceded {
+      margin-top: 0.2rem;
+    }
+
+    .opp-panel {
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 0.4rem;
+      margin-top: 0.3rem;
+      font-size: 0.8rem;
+      max-height: 160px;
+      overflow-y: auto;
+    }
+
+    .opp-entry {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.2rem 0;
+      border-bottom: 1px solid #333;
+    }
   </style>
 </head>
 <body>
@@ -336,6 +398,21 @@ DS 2"></textarea>
     </div>
   </section>
 
+  <!-- Opponent serving rotation (jersey numbers only, this device only) -->
+  <section id="opponent-area">
+    <div class="status-row">
+      <div class="opp-row">
+        <label for="opponent-name" class="small-label">Opponent</label>
+        <input id="opponent-name" type="text" placeholder="Team name" maxlength="40">
+      </div>
+      <div id="opp-server-control" class="opp-row small-label"></div>
+      <button id="opponents-btn">Opponents</button>
+    </div>
+    <div id="opp-carried-note" class="small-label"></div>
+    <div id="opp-conceded" class="small-label"></div>
+    <div id="opponents-panel" class="opp-panel" hidden></div>
+  </section>
+
   <!-- Layout: Court / Bench / Game Log -->
   <section class="layout">
     <div class="panel">
@@ -373,6 +450,7 @@ DS 2"></textarea>
   // --------- Storage keys ---------
   const STORAGE_KEY_AUTO = 'vb_lineup_auto_state_v1';
   const STORAGE_KEY_SAVES = 'vb_lineup_saved_states_v1';
+  const STORAGE_KEY_OPPONENTS = 'vb_opponents_v1';
 
   // --------- State management ---------
 
@@ -388,7 +466,20 @@ DS 2"></textarea>
       subMode: false,
       pendingSub: null,     // {group: 'court'|'bench', playerId}
       substitutions: [],    // game log: subs + set-end entries
-      nextPlayerId: 1
+      nextPlayerId: 1,
+      opponent: createEmptyOpponent()
+    };
+  }
+
+  // Opponent data is about other people's kids: jersey numbers, team name,
+  // dates and counts only. Never a name field for an opposing player, and
+  // nothing leaves this device.
+  function createEmptyOpponent() {
+    return {
+      name: '',                                   // team name, not a person
+      order: [null, null, null, null, null, null], // their serving order, jerseys
+      serverIdx: null,                            // slot currently serving
+      conceded: {}                                // jersey -> points this set
     };
   }
 
@@ -593,8 +684,14 @@ DS 2"></textarea>
       state.ourScore += 1;
     } else {
       if (state.serving === 'us') {
-        // we served, lost rally -> they get serve, no rotation for us
+        // we served, lost rally -> they get serve, no rotation for us.
+        // They rotate, so a new jersey comes up to serve. The point that won
+        // them the serve was won while receiving, so it is credited to nobody.
         state.serving = 'them';
+        advanceOppServer();
+      } else {
+        // they were already serving: same server, credit the point to them
+        creditOppPoint();
       }
       state.theirScore += 1;
     }
@@ -606,6 +703,11 @@ DS 2"></textarea>
   function toggleServing() {
     pushHistory();
     state.serving = (state.serving === 'us') ? 'them' : 'us';
+    // This is a correction, not a rally, so it never advances their rotation.
+    // It does establish slot 0 when the set opens with them serving.
+    if (state.serving === 'them' && normalizeOpponent().serverIdx === null) {
+      state.opponent.serverIdx = 0;
+    }
     render();
   }
 
@@ -675,6 +777,17 @@ DS 2"></textarea>
       score: state.ourScore + "-" + state.theirScore
     });
 
+    // File the set we just played, then carry their order into the next set
+    // as a starting guess: teams usually keep the same serving order.
+    recordCurrentOpponentSet();
+    const opponent = normalizeOpponent();
+    if (opponent.order.some(j => j !== null)) {
+      opponent.carriedFrom = state.setNumber;
+    }
+    opponent.conceded = {};
+    opponent.serverIdx = null;
+    editingOppSlot = false;
+
     // Advance to next set and reset scores
     state.setNumber += 1;
     state.ourScore = 0;
@@ -717,7 +830,11 @@ DS 2"></textarea>
     };
     saves.push(entry);
     setSavedGames(saves);
-    refreshSavedGamesDropdown();
+    // Saving is the closest thing to an end-of-match step, so file the set in
+    // progress too. Keyed by date + set number, so ending the set later
+    // updates this record rather than adding a second one.
+    recordCurrentOpponentSet();
+    render();
   }
 
   function loadSelectedSavedGame() {
@@ -756,6 +873,162 @@ DS 2"></textarea>
     const remaining = saves.filter(e => String(e.id) !== idStr);
     setSavedGames(remaining);
     refreshSavedGamesDropdown();
+  }
+
+  // --------- Opponent serving rotation ---------
+
+  // UI-only flags. Deliberately not in state: toggling a panel or opening an
+  // edit box is not a game event and should not land on the undo stack.
+  let opponentsPanelOpen = false;
+  let editingOppSlot = false;
+
+  // Saved states written before this existed have no opponent, and a partly
+  // written one should not take the app down courtside.
+  function normalizeOpponent() {
+    let o = state.opponent;
+    if (!o || typeof o !== 'object' || Array.isArray(o)) {
+      o = state.opponent = createEmptyOpponent();
+    }
+    if (typeof o.name !== 'string') o.name = '';
+    if (!Array.isArray(o.order) || o.order.length !== 6) {
+      const src = Array.isArray(o.order) ? o.order : [];
+      o.order = [0, 1, 2, 3, 4, 5].map(i => (src[i] == null ? null : String(src[i])));
+    }
+    if (typeof o.serverIdx !== 'number' || o.serverIdx < 0 || o.serverIdx > 5) {
+      o.serverIdx = null;
+    }
+    if (!o.conceded || typeof o.conceded !== 'object' || Array.isArray(o.conceded)) {
+      o.conceded = {};
+    }
+    return o;
+  }
+
+  // Jerseys are numbers. Strip anything else so "#12" and "12" are one key.
+  function cleanJersey(raw) {
+    const digits = String(raw == null ? '' : raw).replace(/[^0-9]/g, '').slice(0, 3);
+    return digits.length ? digits : null;
+  }
+
+  function currentOppJersey() {
+    const o = normalizeOpponent();
+    return o.serverIdx === null ? null : o.order[o.serverIdx];
+  }
+
+  function oppOrderComplete() {
+    return normalizeOpponent().order.every(j => j !== null);
+  }
+
+  // They advance one slot each time they gain serve, which only happens when
+  // they win a rally we served. Scoring while already serving does not move
+  // them. Whoever serves first, that server is slot 0.
+  function advanceOppServer() {
+    const o = normalizeOpponent();
+    o.serverIdx = (o.serverIdx === null) ? 0 : (o.serverIdx + 1) % 6;
+  }
+
+  function creditOppPoint() {
+    const o = normalizeOpponent();
+    const jersey = currentOppJersey();
+    if (!jersey) return;  // unknown server: count it for nobody rather than guess
+    o.conceded[jersey] = (o.conceded[jersey] || 0) + 1;
+  }
+
+  function setOppServerJersey(raw) {
+    const o = normalizeOpponent();
+    if (o.serverIdx === null) return;
+    const jersey = cleanJersey(raw);
+    editingOppSlot = false;
+    if (!jersey) { render(); return; }         // reject empty, put the UI back
+    const previous = o.order[o.serverIdx];
+    if (previous === jersey) { render(); return; }
+
+    pushHistory();
+    const slot = o.serverIdx;
+    o.order[slot] = jersey;
+    // Their subs enter in the same position (15.3.2), so a slot changing
+    // mid-set is normal. Log it rather than silently overwriting.
+    if (previous) {
+      state.substitutions.unshift({
+        kind: 'oppServer',
+        slot: slot,
+        fromJersey: previous,
+        toJersey: jersey,
+        setNumber: state.setNumber,
+        score: state.ourScore + "-" + state.theirScore
+      });
+    }
+    render();
+  }
+
+  function setOpponentName(raw) {
+    const o = normalizeOpponent();
+    const name = String(raw == null ? '' : raw).trim().slice(0, 40);
+    if (name === o.name) return;
+    pushHistory();
+    o.name = name;
+    render();
+  }
+
+  // --------- Opponent library (jersey numbers, dates and counts only) ---------
+
+  function getOpponentLibrary() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_OPPONENTS);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function setOpponentLibrary(lib) {
+    try {
+      localStorage.setItem(STORAGE_KEY_OPPONENTS, JSON.stringify(lib));
+    } catch (e) {
+      // ignore storage errors
+    }
+  }
+
+  // Records the current set against the team name. Keyed by date + set number
+  // so saving mid-set and then ending the set updates one record instead of
+  // writing two. Needs a team name to file it under; silent no-op without one.
+  function recordCurrentOpponentSet() {
+    const o = normalizeOpponent();
+    if (!o.name) return false;
+    const hasAnything = o.order.some(j => j !== null) || Object.keys(o.conceded).length > 0;
+    if (!hasAnything) return false;
+
+    const now = new Date();
+    const day = now.toISOString().slice(0, 10);
+    const lib = getOpponentLibrary();
+    const entry = lib[o.name] && typeof lib[o.name] === 'object' ? lib[o.name] : { sets: [] };
+    if (!Array.isArray(entry.sets)) entry.sets = [];
+
+    const record = {
+      date: day,
+      setNumber: state.setNumber,
+      order: o.order.slice(),
+      conceded: JSON.parse(JSON.stringify(o.conceded))
+    };
+    const existing = entry.sets.findIndex(
+      s => s && s.date === day && s.setNumber === state.setNumber
+    );
+    if (existing === -1) entry.sets.push(record);
+    else entry.sets[existing] = record;
+
+    entry.lastSeen = now.toISOString();
+    lib[o.name] = entry;
+    setOpponentLibrary(lib);
+    return true;
+  }
+
+  function deleteOpponent(name) {
+    if (!confirm(`Delete everything recorded for "${name}"? This cannot be undone.`)) return;
+    const lib = getOpponentLibrary();
+    delete lib[name];
+    setOpponentLibrary(lib);
+    render();
   }
 
   // --------- Rendering ---------
@@ -874,6 +1147,8 @@ DS 2"></textarea>
 
       if (entry.kind === 'setEnd') {
         div.textContent = `End Set ${entry.setNumber}: ${entry.score}`;
+      } else if (entry.kind === 'oppServer') {
+        div.textContent = `Set ${entry.setNumber} @ ${entry.score}: their slot ${entry.slot + 1} #${entry.fromJersey} -> #${entry.toJersey}`;
       } else {
         // substitution (backward compatible with older saves)
         const inName = getPlayerName(entry.inId);
@@ -884,9 +1159,117 @@ DS 2"></textarea>
       subsLog.appendChild(div);
     });
 
+    renderOpponent();
+
     // Save current state automatically & refresh saved list UI
     saveAutoState();
     refreshSavedGamesDropdown();
+  }
+
+  // "Their server: #12  next #4", or a box to type the jersey when the slot
+  // is still unknown. "next" only once all six slots are known, because until
+  // then it would be a guess.
+  function buildOppServerControl(control, o) {
+    control.innerHTML = '';
+    if (state.serving !== 'them' || o.serverIdx === null) return;
+
+    const jersey = o.order[o.serverIdx];
+    if (!jersey || editingOppSlot) {
+      const label = document.createElement('span');
+      label.textContent = 'Their server: #';
+      const input = document.createElement('input');
+      input.id = 'opp-server-input';
+      input.type = 'text';
+      input.inputMode = 'numeric';
+      input.value = jersey || '';
+      input.addEventListener('change', e => setOppServerJersey(e.target.value));
+      input.addEventListener('blur', e => setOppServerJersey(e.target.value));
+      control.appendChild(label);
+      control.appendChild(input);
+      return;
+    }
+
+    const shown = document.createElement('span');
+    shown.className = 'opp-jersey';
+    shown.textContent = 'Their server: #' + jersey;
+    control.appendChild(shown);
+
+    if (oppOrderComplete()) {
+      const nextSpan = document.createElement('span');
+      nextSpan.textContent = 'next #' + o.order[(o.serverIdx + 1) % 6];
+      control.appendChild(nextSpan);
+    }
+
+    const edit = document.createElement('span');
+    edit.className = 'opp-link';
+    edit.textContent = 'wrong number?';
+    edit.addEventListener('click', () => { editingOppSlot = true; render(); });
+    control.appendChild(edit);
+  }
+
+  // Reports jersey numbers and counts. No evaluation of the opposing players.
+  function renderOpponent() {
+    const o = normalizeOpponent();
+
+    const nameInput = document.getElementById('opponent-name');
+    if (document.activeElement !== nameInput) nameInput.value = o.name;
+
+    // Server control: only while they are serving, to keep the line quiet.
+    // Every point re-renders, so leave the box alone while it is being typed
+    // in or a half-entered jersey would vanish.
+    const control = document.getElementById('opp-server-control');
+    const active = document.activeElement;
+    if (!(active && active.id === 'opp-server-input')) {
+      buildOppServerControl(control, o);
+    }
+
+    const carried = document.getElementById('opp-carried-note');
+    carried.textContent = (o.carriedFrom && o.order.some(j => j !== null))
+      ? `Their order carried from set ${o.carriedFrom}; edit if they changed it.`
+      : '';
+
+    // Points they scored while each jersey served, this set.
+    const conceded = document.getElementById('opp-conceded');
+    const parts = [];
+    o.order.forEach(jersey => {
+      if (jersey && o.conceded[jersey]) parts.push('#' + jersey + ' ' + o.conceded[jersey]);
+    });
+    conceded.textContent = parts.length
+      ? 'Their points by server: ' + parts.join(' · ')
+      : '';
+
+    // Opponent library, collapsed by default.
+    const panel = document.getElementById('opponents-panel');
+    panel.hidden = !opponentsPanelOpen;
+    panel.innerHTML = '';
+    if (opponentsPanelOpen) {
+      const lib = getOpponentLibrary();
+      const names = Object.keys(lib).sort();
+      if (!names.length) {
+        const empty = document.createElement('div');
+        empty.className = 'small-label';
+        empty.textContent = 'No opponents recorded yet.';
+        panel.appendChild(empty);
+      }
+      names.forEach(name => {
+        const entry = lib[name] || {};
+        const sets = Array.isArray(entry.sets) ? entry.sets : [];
+        const row = document.createElement('div');
+        row.className = 'opp-entry';
+
+        const text = document.createElement('div');
+        const seen = entry.lastSeen ? new Date(entry.lastSeen).toLocaleDateString() : 'unknown';
+        text.textContent = `${name} - last seen ${seen} - ${sets.length} set${sets.length === 1 ? '' : 's'}`;
+        row.appendChild(text);
+
+        const del = document.createElement('button');
+        del.textContent = 'Delete';
+        del.addEventListener('click', () => deleteOpponent(name));
+        row.appendChild(del);
+
+        panel.appendChild(row);
+      });
+    }
   }
 
   // --------- Event wiring ---------
@@ -909,6 +1292,16 @@ DS 2"></textarea>
     document.getElementById('save-game-btn').addEventListener('click', saveCurrentGameAsSnapshot);
     document.getElementById('load-game-btn').addEventListener('click', loadSelectedSavedGame);
     document.getElementById('delete-game-btn').addEventListener('click', deleteSelectedSavedGame);
+
+    // Opponent controls. Commit on change/blur so typing does not spam undo.
+    document.getElementById('opponent-name')
+      .addEventListener('change', e => setOpponentName(e.target.value));
+    document.getElementById('opponent-name')
+      .addEventListener('blur', e => setOpponentName(e.target.value));
+    document.getElementById('opponents-btn').addEventListener('click', () => {
+      opponentsPanelOpen = !opponentsPanelOpen;
+      render();
+    });
 
     render();
   });
