@@ -257,6 +257,32 @@
       background: #8a4b0e;
     }
 
+    /* Rally log: clock, the transient serve-miss tap, the set-chance line. */
+    .rally-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+
+    .serve-miss-tap {
+      font-size: 0.7rem;
+      padding: 0.1rem 0.35rem;
+      border: 1px solid #c9a227;
+      border-radius: 4px;
+      color: #c9a227;
+      cursor: pointer;
+    }
+
+    .serve-miss-tap.flagged {
+      background: #c9a227;
+      color: #111;
+    }
+
+    #set-chance {
+      color: #c9a227;
+    }
+
     .saved-controls {
       display: flex;
       flex-wrap: wrap;
@@ -321,7 +347,12 @@ DS 2"></textarea>
         <span>Us: <span id="our-score">0</span></span>
         <span>Them: <span id="their-score">0</span></span>
       </div>
-      
+
+      <div class="rally-meta">
+        <span id="clock-readout" class="small-label"></span>
+        <span id="serve-miss-tap" class="serve-miss-tap" hidden>missed serve</span>
+        <span id="set-chance" class="small-label" hidden></span>
+      </div>
     </div>
 
     <div class="controls-row">
@@ -363,6 +394,8 @@ DS 2"></textarea>
         <select id="saved-games-select"></select>
         <button id="load-game-btn">Load</button>
         <button id="delete-game-btn">Delete</button>
+        <button id="export-rallies-btn">Export rally log</button>
+        <button id="chance-toggle-btn">Set chance: Off</button>
         <button id="reset-btn" class="danger">Reset App</button>
       </div>
     </div>
@@ -487,6 +520,244 @@ DS 2"></textarea>
 
   // --------- Helpers ---------
 
+  // --------- Rally log ---------
+  // One record per point:
+  //   { set, ourScore, theirScore, serving, winner, ourRotation, ourServerId,
+  //     theirSlot, theirJersey, serveMiss, t, setElapsedMs, matchElapsedMs,
+  //     pWin, pace }
+  // Scores are the scoreline after the point. serving/ourRotation/ourServerId
+  // describe the rally as it was played, which is why the record is built
+  // before scorePoint mutates anything.
+  //
+  // The array is created on demand rather than in createInitialState, so a
+  // state saved before this existed starts logging on its next point.
+
+  const CHANCE_PRIOR = 10;      // pseudo-points pulling the rate toward even
+  const PACE_MIN_TOTAL = 8;     // total points before a projection means much
+  const SET_TARGET = 25;
+
+  function rallyLog() {
+    if (!Array.isArray(state.rallies)) state.rallies = [];
+    return state.rallies;
+  }
+
+  function lastRally() {
+    const log = rallyLog();
+    return log.length ? log[log.length - 1] : null;
+  }
+
+  // "7 Maya T" -> jersey 7, name "Maya T". "2Fast" has no separator, so it
+  // is a name. A bare number is a name too: there is nobody to attach it to.
+  function parseLineupLine(line) {
+    const m = /^(\d{1,3})\s+(\S.*)$/.exec(String(line).trim());
+    if (!m) return { jersey: null, name: String(line).trim() };
+    return { jersey: m[1], name: m[2].trim() };
+  }
+
+  function playerRef(id) {
+    const p = getPlayerById(id);
+    if (!p) return null;
+    return p.jersey ? String(p.jersey) : ('id:' + id);
+  }
+
+  // Our share of points this set, shrunk toward even so an early 3-0 does not
+  // read as a rout.
+  function shrunkPointRate(our, them) {
+    return (our + CHANCE_PRIOR / 2) / (our + them + CHANCE_PRIOR);
+  }
+
+  // Probability we reach 25 first, win by two, if every rally is won with
+  // probability p. The deuce tail is the closed form rather than a recursion
+  // with a cap, so it is exact however long the set runs.
+  function setWinProbability(our, them, p) {
+    if (!(p >= 0)) p = 0;
+    if (p > 1) p = 1;
+    const q = 1 - p;
+    const memo = {};
+
+    function deuce(diff) {
+      const denom = p * p + q * q;
+      const even = denom === 0 ? 0.5 : (p * p) / denom;
+      if (diff === 0) return even;
+      if (diff >= 1) return p + q * even;
+      return p * even;
+    }
+
+    function f(a, b) {
+      if (a >= SET_TARGET && a - b >= 2) return 1;
+      if (b >= SET_TARGET && b - a >= 2) return 0;
+      if (a >= SET_TARGET - 1 && b >= SET_TARGET - 1) return deuce(a - b);
+      const key = a + ',' + b;
+      if (key in memo) return memo[key];
+      const v = p * f(a + 1, b) + q * f(a, b + 1);
+      memo[key] = v;
+      return v;
+    }
+
+    return f(our, them);
+  }
+
+  function setChance(our, them) {
+    return setWinProbability(our, them, shrunkPointRate(our, them));
+  }
+
+  // Straight-line projection: the leader reaches 25, the other side scales.
+  function paceFrom(our, them) {
+    if (our + them < PACE_MIN_TOTAL) return null;
+    if (our === them) return [SET_TARGET, SET_TARGET];
+    if (them > our) return [Math.round(our * SET_TARGET / them), SET_TARGET];
+    return [SET_TARGET, Math.round(them * SET_TARGET / our)];
+  }
+
+  function chanceLabel(pointsPlayed) {
+    if (pointsPlayed < 10) return 'early';
+    if (pointsPlayed < 20) return 'rough';
+    return 'solid';
+  }
+
+  function firstRallyTimeInSet(setNumber) {
+    const log = rallyLog();
+    for (let i = 0; i < log.length; i++) {
+      if (log[i].set === setNumber) return log[i].t;
+    }
+    return null;
+  }
+
+  function firstRallyTimeInMatch() {
+    const log = rallyLog();
+    return log.length ? log[0].t : null;
+  }
+
+  // Called from the top of scorePoint, before anything is mutated.
+  function recordRally(team, now) {
+    const log = rallyLog();
+    const t = (typeof now === 'number') ? now : Date.now();
+    const ourScore = state.ourScore + (team === 'us' ? 1 : 0);
+    const theirScore = state.theirScore + (team === 'them' ? 1 : 0);
+    const servingNow = state.serving;
+
+    // Only present once the opponent tracker (its own change) is on the page.
+    let theirSlot = null;
+    let theirJersey = null;
+    const opponent = state.opponent;
+    if (opponent && Array.isArray(opponent.order) && typeof opponent.serverIdx === 'number') {
+      theirSlot = opponent.serverIdx;
+      theirJersey = opponent.order[opponent.serverIdx] || null;
+    }
+
+    const setStart = firstRallyTimeInSet(state.setNumber);
+    const matchStart = firstRallyTimeInMatch();
+
+    log.push({
+      set: state.setNumber,
+      ourScore: ourScore,
+      theirScore: theirScore,
+      serving: servingNow,
+      winner: team,
+      ourRotation: state.rotation.slice(),
+      ourServerId: servingNow === 'us' ? (state.rotation[0] || null) : null,
+      theirSlot: theirSlot,
+      theirJersey: theirJersey,
+      serveMiss: false,
+      t: t,
+      setElapsedMs: setStart === null ? 0 : t - setStart,
+      matchElapsedMs: matchStart === null ? 0 : t - matchStart,
+      pWin: setChance(ourScore, theirScore),
+      pace: paceFrom(ourScore, theirScore)
+    });
+  }
+
+  // Offered only for the point that just happened, and only when they scored
+  // off our serve - the one case where a service error is possible.
+  function serveMissAvailable() {
+    const last = lastRally();
+    return !!(last && last.winner === 'them' && last.serving === 'us');
+  }
+
+  function toggleServeMiss() {
+    if (!serveMissAvailable()) return;
+    pushHistory();
+    const last = lastRally();
+    last.serveMiss = !last.serveMiss;
+    render();
+  }
+
+  function toggleSetChance() {
+    pushHistory();
+    state.showSetChance = !state.showSetChance;
+    render();
+  }
+
+  function formatClock(ms) {
+    if (typeof ms !== 'number' || !isFinite(ms) || ms < 0) ms = 0;
+    const total = Math.floor(ms / 1000);
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+    const mm = hours ? String(minutes).padStart(2, '0') : String(minutes);
+    const ss = String(seconds).padStart(2, '0');
+    return hours ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
+  }
+
+  // Points on court per player, straight from the log, so exact playing-time
+  // share is computable without trusting a running counter.
+  function pointsOnCourtFromLog() {
+    const totals = {};
+    rallyLog().forEach(r => {
+      (r.ourRotation || []).forEach(id => {
+        if (!id) return;
+        totals[id] = (totals[id] || 0) + 1;
+      });
+    });
+    return totals;
+  }
+
+  // Jersey numbers and counts. Never a name: the log is the one thing here
+  // built to leave the device.
+  function buildRallyExport(now) {
+    const log = rallyLog();
+    const totals = pointsOnCourtFromLog();
+    return {
+      exportedAt: new Date(typeof now === 'number' ? now : Date.now()).toISOString(),
+      totalRallies: log.length,
+      sets: log.length ? log[log.length - 1].set : 0,
+      players: state.players.map(p => ({
+        ref: p.jersey ? String(p.jersey) : ('id:' + p.id),
+        pointsOnCourt: totals[p.id] || 0
+      })),
+      rallies: log.map(r => ({
+        set: r.set,
+        ourScore: r.ourScore,
+        theirScore: r.theirScore,
+        serving: r.serving,
+        winner: r.winner,
+        ourRotation: (r.ourRotation || []).map(id => playerRef(id)),
+        ourServer: r.ourServerId ? playerRef(r.ourServerId) : null,
+        theirSlot: r.theirSlot,
+        theirJersey: r.theirJersey,
+        serveMiss: !!r.serveMiss,
+        t: r.t,
+        setElapsedMs: r.setElapsedMs,
+        matchElapsedMs: r.matchElapsedMs,
+        pWin: r.pWin,
+        pace: r.pace
+      }))
+    };
+  }
+
+  function exportRallyLog() {
+    const data = JSON.stringify(buildRallyExport(), null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'rally-log-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   function getPlayerById(id) {
     return state.players.find(p => p.id === id) || null;
   }
@@ -531,12 +802,20 @@ DS 2"></textarea>
     const newPlayers = [];
     let nextId = 1;
 
-    for (const name of rawLines) {
+    for (const line of rawLines) {
+      const parsed = parseLineupLine(line);
+      const name = parsed.name;
       let existing = oldPlayersByName[name];
       if (!existing) {
-        existing = { id: nextId, name: name, points: 0 };
+        existing = { id: nextId, name: name, points: 0, jersey: parsed.jersey };
       } else {
-        existing = { id: nextId, name: existing.name, points: existing.points };
+        existing = {
+          id: nextId,
+          name: existing.name,
+          points: existing.points,
+          // a number typed this time wins; otherwise keep what was there
+          jersey: parsed.jersey || existing.jersey || null
+        };
       }
       newPlayers.push(existing);
       nextId += 1;
@@ -580,6 +859,9 @@ DS 2"></textarea>
 
   function scorePoint(team) {
     pushHistory();
+    // Before any mutation: who was serving, who was on court, which of their
+    // slots was up. None of that is recoverable afterwards.
+    recordRally(team);
 
     if (team === 'us') {
       if (state.serving === 'them') {
@@ -887,6 +1169,46 @@ DS 2"></textarea>
     // Save current state automatically & refresh saved list UI
     saveAutoState();
     refreshSavedGamesDropdown();
+    renderRallyExtras();
+  }
+
+  // The clock ticks on its own between points, so it is split out and can be
+  // refreshed without touching the rest of the screen or saving anything.
+  function renderClock() {
+    const readout = document.getElementById('clock-readout');
+    if (!readout) return;
+    const log = rallyLog();
+    if (!log.length) { readout.textContent = ''; return; }
+    const now = Date.now();
+    const setStart = firstRallyTimeInSet(state.setNumber);
+    const matchStart = firstRallyTimeInMatch();
+    const setPart = setStart === null ? '0:00' : formatClock(now - setStart);
+    readout.textContent = `Set ${setPart} · Match ${formatClock(now - matchStart)}`;
+  }
+
+  function renderRallyExtras() {
+    renderClock();
+
+    const tap = document.getElementById('serve-miss-tap');
+    const available = serveMissAvailable();
+    tap.hidden = !available;
+    tap.classList.toggle('flagged', available && !!lastRally().serveMiss);
+
+    const toggle = document.getElementById('chance-toggle-btn');
+    toggle.textContent = state.showSetChance ? 'Set chance: On' : 'Set chance: Off';
+    toggle.classList.toggle('toggle-on', !!state.showSetChance);
+
+    // Computed on every point regardless; shown only when asked for.
+    const chance = document.getElementById('set-chance');
+    const played = state.ourScore + state.theirScore;
+    if (!state.showSetChance) {
+      chance.hidden = true;
+      chance.textContent = '';
+    } else {
+      chance.hidden = false;
+      const pct = Math.round(setChance(state.ourScore, state.theirScore) * 100);
+      chance.textContent = `Set chance ${pct}% (${chanceLabel(played)})`;
+    }
   }
 
   // --------- Event wiring ---------
@@ -896,6 +1218,11 @@ DS 2"></textarea>
     loadAutoStateIfAny();
 
     document.getElementById('load-lineup-btn').addEventListener('click', loadLineupFromTextarea);
+    document.getElementById('serve-miss-tap').addEventListener('click', toggleServeMiss);
+    document.getElementById('chance-toggle-btn').addEventListener('click', toggleSetChance);
+    document.getElementById('export-rallies-btn').addEventListener('click', exportRallyLog);
+    // The set clock is wall-clock, so it moves without any state change.
+    setInterval(renderClock, 1000);
     document.getElementById('rotate-forward-btn').addEventListener('click', rotateForward);
     document.getElementById('rotate-back-btn').addEventListener('click', rotateBackward);
     document.getElementById('score-us-btn').addEventListener('click', () => scorePoint('us'));
