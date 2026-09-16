@@ -225,6 +225,16 @@
       box-shadow: 0 0 4px #f4d03f;
     }
 
+    .not-in-yet {
+      font-size: 0.7rem;
+      color: #c9a227;
+      margin-top: 0.1rem;
+    }
+
+    #bench-participation {
+      margin-top: 0.3rem;
+    }
+
     #subs-log-list {
       max-height: 200px;
       overflow-y: auto;
@@ -346,6 +356,7 @@ DS 2"></textarea>
     <div class="panel">
       <h2>Bench</h2>
       <div id="bench-list"></div>
+      <div id="bench-participation" class="small-label"></div>
     </div>
 
     <div class="panel">
@@ -381,6 +392,7 @@ DS 2"></textarea>
       players: [],          // [{id, name, points}]
       rotation: [],         // [playerId at pos1, pos2, ..., pos6]
       bench: [],            // [playerId,...]
+      setParticipants: [],  // [playerId,...] everyone who has been on court this set
       ourScore: 0,
       theirScore: 0,
       serving: 'us',        // 'us' | 'them'
@@ -504,6 +516,28 @@ DS 2"></textarea>
     });
   }
 
+  // --------- Set participation (CYC Rule 20.1) ---------
+
+  // setParticipants is everyone who has been on court at any point in the
+  // current set. Called at the top of render(), so it picks up subs and any
+  // other change that puts a new id in the rotation. Older saved states have
+  // no record of who has already played, so they default to the six on court.
+  function syncSetParticipants() {
+    if (!Array.isArray(state.setParticipants)) {
+      state.setParticipants = [];
+    }
+    state.rotation.forEach(id => {
+      if (id && state.setParticipants.indexOf(id) === -1) {
+        state.setParticipants.push(id);
+      }
+    });
+  }
+
+  function benchPlayersNotYetIn() {
+    const played = Array.isArray(state.setParticipants) ? state.setParticipants : [];
+    return state.bench.filter(id => id && played.indexOf(id) === -1);
+  }
+
   // rotation index 0..5 => positions 1..6
   function getPlayerIdAtPosition(posNumber) {
     const idx = posNumber - 1;
@@ -549,6 +583,10 @@ DS 2"></textarea>
     // First six are positions 1..6
     state.rotation = ids.slice(0, 6);
     state.bench = ids.slice(6);
+
+    // Player ids are reassigned here, so participation restarts from the
+    // six now on court.
+    state.setParticipants = state.rotation.slice();
 
     state.pendingSub = null;
 
@@ -666,6 +704,21 @@ DS 2"></textarea>
   }
 
   function newSet() {
+    // CYC Rule 20.1: report bench players who never entered this set. The
+    // coach decides; this never blocks ending the set.
+    const missing = benchPlayersNotYetIn();
+    if (missing.length > 0) {
+      const names = missing.map(getPlayerName).join(', ');
+      const plural = missing.length === 1 ? 'player who' : 'players who';
+      if (!confirm(
+        `Set ${state.setNumber} ended with ${missing.length} ${plural} did not enter: ${names}.\n\n` +
+        `CYC Rule 20.1: all eligible bench players must participate in each set.\n\n` +
+        `Continue to next set?`
+      )) {
+        return;
+      }
+    }
+
     pushHistory();
 
     // Log final score of the set we're ending
@@ -680,6 +733,7 @@ DS 2"></textarea>
     state.ourScore = 0;
     state.theirScore = 0;
     state.serving = 'us';
+    state.setParticipants = state.rotation.filter(id => id);
     state.pendingSub = null;
     render();
   }
@@ -761,6 +815,8 @@ DS 2"></textarea>
   // --------- Rendering ---------
 
   function render() {
+    syncSetParticipants();
+
     document.getElementById('our-score').textContent = state.ourScore;
     document.getElementById('their-score').textContent = state.theirScore;
     document.getElementById('set-number').textContent = state.setNumber;
@@ -837,6 +893,8 @@ DS 2"></textarea>
     const benchList = document.getElementById('bench-list');
     benchList.innerHTML = '';
 
+    const notYetIn = benchPlayersNotYetIn();
+
     state.bench.forEach(id => {
       const player = getPlayerById(id);
       if (!player) return;
@@ -860,10 +918,28 @@ DS 2"></textarea>
       card.appendChild(nameDiv);
       card.appendChild(metaDiv);
 
+      if (notYetIn.indexOf(id) !== -1) {
+        const flagDiv = document.createElement('div');
+        flagDiv.className = 'not-in-yet';
+        flagDiv.textContent = 'not in yet';
+        card.appendChild(flagDiv);
+      }
+
       card.addEventListener('click', () => handlePlayerClick('bench', id));
 
       benchList.appendChild(card);
     });
+
+    const benchNote = document.getElementById('bench-participation');
+    if (notYetIn.length === 0) {
+      benchNote.textContent = state.bench.length
+        ? `All bench players have been in set ${state.setNumber}.`
+        : '';
+    } else {
+      benchNote.textContent =
+        `${notYetIn.length} not in set ${state.setNumber} yet: ` +
+        notYetIn.map(getPlayerName).join(', ');
+    }
 
     // Game log (subs + set ends)
     const subsLog = document.getElementById('subs-log-list');
