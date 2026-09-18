@@ -1,0 +1,1434 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>Volleyball Lineup Tracker</title>
+      <meta name="viewport"
+            content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+      <!-- iOS home-screen app settings -->
+      <meta name="apple-mobile-web-app-capable" content="yes">
+      <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+      <meta name="apple-mobile-web-app-title" content="Lineup">
+
+      <!-- App icon (add this file to your repo) -->
+      <link rel="apple-touch-icon" href="vb-icon192.png">
+      <style>
+    * {
+      box-sizing: border-box;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      margin: 0;
+      padding: 0.5rem;
+      background: #111;
+      color: #f5f5f5;
+      touch-action: manipulation;
+    }
+
+    h1 {
+      font-size: 1.3rem;
+      margin: 0.5rem 0;
+      text-align: center;
+    }
+
+    .app {
+      max-width: 900px;
+      margin: 0 auto;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 0.5rem;
+      background: #1b1b1b;
+    }
+
+    section {
+      margin-bottom: 0.6rem;
+    }
+
+    #import-area {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    #lineup-input {
+      width: 100%;
+      min-height: 70px;
+      background: #111;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 0.4rem;
+      font-size: 0.8rem;
+    }
+
+    button {
+      padding: 0.3rem 0.6rem;
+      margin: 0.1rem;
+      border-radius: 4px;
+      border: 1px solid #555;
+      background: #2a2a2a;
+      color: #f5f5f5;
+      font-size: 0.8rem;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+    }
+
+    button.primary {
+      background: #2b7cff;
+      border-color: #2b7cff;
+      color: #fff;
+    }
+
+    button.danger {
+      background: #b00020;
+      border-color: #b00020;
+      color: #fff;
+    }
+
+    button.toggle-on {
+      background: #0e8a3a;
+      border-color: #0e8a3a;
+    }
+
+    .status-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 0.3rem 0.4rem;
+    }
+
+    .score {
+      font-size: 1.6rem;
+      font-weight: 700;
+      display: flex;
+      gap: 0.6rem;
+      align-items: baseline;
+    }
+
+    .score span span {
+      font-size: 1.8rem;
+    }
+
+    .controls-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      justify-content: center;
+      margin-top: 0.3rem;
+    }
+
+    .controls-row button {
+      font-size: 0.95rem;
+      padding: 0.45rem 0.9rem;
+    }
+
+    .big-score {
+      font-size: 1.15rem;
+      padding: 0.55rem 1.1rem;
+      font-weight: 600;
+    }
+
+    .layout {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .panel {
+      flex: 1 1 200px;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 0.4rem;
+      min-height: 120px;
+    }
+
+    .panel h2 {
+      font-size: 0.9rem;
+      margin: 0 0 0.3rem 0;
+    }
+
+    #court {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-auto-rows: 72px;
+      gap: 0.25rem;
+    }
+
+    .court-cell {
+      border-radius: 6px;
+      border: 1px solid #444;
+      background: #18232e;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      padding: 0.2rem;
+      font-size: 0.7rem;
+      text-align: center;
+    }
+
+    .court-cell.empty {
+      opacity: 0.5;
+      font-style: italic;
+    }
+
+    .pos-label {
+      font-size: 0.7rem;
+      opacity: 0.8;
+      text-align: left;
+      margin-bottom: 0.1rem;
+    }
+
+    .player-card {
+      width: 100%;
+      border-radius: 6px;
+      padding: 0.25rem;
+      border: 1px solid #555;
+      background: #222;
+      cursor: pointer;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .player-name {
+      font-size: 1.0rem;
+      font-weight: 600;
+      margin-bottom: 0.1rem;
+    }
+
+    .player-meta {
+      font-size: 0.75rem;
+      opacity: 0.85;
+    }
+
+    #bench-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .sub-pending {
+      border: 2px solid #f4d03f !important;
+      box-shadow: 0 0 4px #f4d03f;
+    }
+
+    #subs-log-list {
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: 0.8rem;
+    }
+
+    .sub-entry {
+      padding: 0.2rem 0;
+      border-bottom: 1px solid #333;
+    }
+
+    .small-label {
+      font-size: 0.7rem;
+      opacity: 0.7;
+    }
+
+    .serving-indicator {
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      border: 1px solid #555;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    .serving-us {
+      background: #0e8a3a;
+    }
+
+    .serving-them {
+      background: #8a4b0e;
+    }
+
+    .saved-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .saved-controls select {
+      font-size: 0.8rem;
+      max-width: 180px;
+    }
+
+    .saved-controls button {
+      font-size: 0.85rem;
+      padding: 0.35rem 0.8rem;
+    }
+
+    .bottom-section {
+      margin-top: 0.4rem;
+    }
+
+    /* Opponent serving rotation. Jersey numbers only - never names. */
+    .opp-row {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      flex-wrap: wrap;
+    }
+
+    #opponent-name,
+    #opp-server-input {
+      background: #111;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 0.15rem 0.3rem;
+      font-size: 0.8rem;
+    }
+
+    #opponent-name {
+      width: 9rem;
+    }
+
+    #opp-server-input {
+      width: 3.5rem;
+    }
+
+    .opp-jersey {
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    /* A long run by one server: bigger, gold, same accent as the other
+       markers. Prominence only - it never blocks or prompts. */
+    .opp-run {
+      font-size: 1.1rem;
+      color: #c9a227;
+    }
+
+    .opp-run .opp-jersey {
+      font-size: 1.1rem;
+    }
+
+    .opp-run-count {
+      font-weight: 700;
+    }
+
+    #opp-order-row {
+      margin-top: 0.3rem;
+    }
+
+    .opp-slot-input {
+      width: 2.6rem;
+      background: #111;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 0.15rem 0.2rem;
+      font-size: 0.8rem;
+      text-align: center;
+    }
+
+    .opp-slot-input.serving-slot {
+      border-color: #0e8a3a;
+    }
+
+    .opp-link {
+      color: #7fb2ff;
+      font-size: 0.7rem;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    #opp-carried-note,
+    #opp-conceded {
+      margin-top: 0.2rem;
+    }
+
+    .opp-panel {
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 0.4rem;
+      margin-top: 0.3rem;
+      font-size: 0.8rem;
+      max-height: 160px;
+      overflow-y: auto;
+    }
+
+    .opp-entry {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.2rem 0;
+      border-bottom: 1px solid #333;
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <h1>Volleyball Lineup Tracker</h1>
+
+  <!-- Lineup Import -->
+  <section id="import-area">
+    <label for="lineup-input" class="small-label">
+      Lineup (one name per line in serving order) then bench (any order).
+    </label>
+    <textarea id="lineup-input" placeholder="e.g.
+Setter
+Middle 1
+Outside 1
+Opposite
+Middle 2
+Outside 2
+DS 1
+DS 2"></textarea>
+    <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
+      <button id="load-lineup-btn" class="primary">Load / Update<br>Lineup</button>
+
+      <!-- Rotation buttons moved here -->
+      <div>
+          <span class="small-label">Rotate</span>
+          
+          <button id="rotate-back-btn">◀︎</button>
+          <button id="rotate-forward-btn">▶︎</button>
+        <span class="small-label">Serving:</span>
+        <span id="serving-indicator" class="serving-indicator serving-us">Us</span>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- Status & Controls -->
+  <section>
+    <div class="status-row">
+      <div>Set: <span id="set-number">1</span></div>
+      <div class="score">
+        <span>Us: <span id="our-score">0</span></span>
+        <span>Them: <span id="their-score">0</span></span>
+      </div>
+      
+    </div>
+
+    <div class="controls-row">
+
+      <button id="score-us-btn" class="primary big-score">Us +1</button>
+      <button id="score-them-btn" class="primary big-score">Them +1</button>
+
+      <button id="undo-btn">Undo</button>
+      <button id="new-set-btn">New Set</button>
+
+      <button id="sub-mode-btn">Sub Mode: Off</button>
+    </div>
+  </section>
+
+  <!-- Opponent serving rotation (jersey numbers only, this device only) -->
+  <section id="opponent-area">
+    <div class="status-row">
+      <div class="opp-row">
+        <label for="opponent-name" class="small-label">Opponent</label>
+        <input id="opponent-name" type="text" placeholder="Team name" maxlength="40">
+      </div>
+      <div id="opp-server-control" class="opp-row small-label"></div>
+      <button id="opp-order-btn">Their order</button>
+      <button id="opponents-btn">Opponents</button>
+    </div>
+    <div id="opp-order-row" class="opp-row" hidden></div>
+    <div id="opp-carried-note" class="small-label"></div>
+    <div id="opp-conceded" class="small-label"></div>
+    <div id="opponents-panel" class="opp-panel" hidden></div>
+  </section>
+
+  <!-- Layout: Court / Bench / Game Log -->
+  <section class="layout">
+    <div class="panel">
+      <h2>Court</h2>
+      <div id="court"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Bench</h2>
+      <div id="bench-list"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Game Log</h2>
+      <div id="subs-log-list"></div>
+    </div>
+  </section>
+
+  <!-- Saved games + Reset (bottom of view) -->
+  <section class="bottom-section">
+    <div class="status-row">
+      <div class="small-label">Game Management (this device only)</div>
+      <div class="saved-controls">
+        <button id="save-game-btn">Save Game</button>
+        <select id="saved-games-select"></select>
+        <button id="load-game-btn">Load</button>
+        <button id="delete-game-btn">Delete</button>
+        <button id="reset-btn" class="danger">Reset App</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  // --------- Storage keys ---------
+  const STORAGE_KEY_AUTO = 'vb_lineup_auto_state_v1';
+  const STORAGE_KEY_SAVES = 'vb_lineup_saved_states_v1';
+  const STORAGE_KEY_OPPONENTS = 'vb_opponents_v1';
+
+  // --------- State management ---------
+
+  function createInitialState() {
+    return {
+      players: [],          // [{id, name, points}]
+      rotation: [],         // [playerId at pos1, pos2, ..., pos6]
+      bench: [],            // [playerId,...]
+      ourScore: 0,
+      theirScore: 0,
+      serving: 'us',        // 'us' | 'them'
+      setNumber: 1,
+      subMode: false,
+      pendingSub: null,     // {group: 'court'|'bench', playerId}
+      substitutions: [],    // game log: subs + set-end entries
+      nextPlayerId: 1,
+      opponent: createEmptyOpponent()
+    };
+  }
+
+  // Opponent data is about other people's kids: jersey numbers, team name,
+  // dates and counts only. Never a name field for an opposing player, and
+  // nothing leaves this device.
+  // Slots are positions first and jerseys second. The six rotation slots exist
+  // as soon as they serve, whether or not anyone knows the numbers, so points
+  // are attributed to the slot index. A jersey is an optional label on a slot,
+  // which is why filling one in later back-fills everything already recorded
+  // against that slot.
+  function createEmptyOpponent() {
+    return {
+      name: '',                                   // team name, not a person
+      order: [null, null, null, null, null, null], // optional jersey per slot
+      serverIdx: null,                            // slot currently serving
+      conceded: {},                               // slot index -> points this set
+      run: 0                                      // their straight points, this serve
+    };
+  }
+
+  let state = createInitialState();
+  let historyStack = [];
+
+  function cloneState(s) {
+    return JSON.parse(JSON.stringify(s));
+  }
+
+  function pushHistory() {
+    historyStack.push(cloneState(state));
+    updateUndoButton();
+  }
+
+  function restoreState(snapshot) {
+    state = snapshot;
+    render();
+  }
+
+  function updateUndoButton() {
+    const undoBtn = document.getElementById('undo-btn');
+    undoBtn.disabled = historyStack.length === 0;
+  }
+
+  // --------- Local storage helpers ---------
+
+  function saveAutoState() {
+    try {
+      localStorage.setItem(STORAGE_KEY_AUTO, JSON.stringify(state));
+    } catch (e) {
+      // ignore storage errors
+    }
+  }
+
+  function loadAutoStateIfAny() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_AUTO);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          state = parsed;
+        }
+      }
+    } catch (e) {
+      state = createInitialState();
+    }
+  }
+
+  function getSavedGames() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_SAVES);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function setSavedGames(list) {
+    try {
+      localStorage.setItem(STORAGE_KEY_SAVES, JSON.stringify(list));
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  function refreshSavedGamesDropdown() {
+    const sel = document.getElementById('saved-games-select');
+    const loadBtn = document.getElementById('load-game-btn');
+    const delBtn = document.getElementById('delete-game-btn');
+    if (!sel) return;
+
+    const saves = getSavedGames();
+    sel.innerHTML = '';
+
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = saves.length ? 'Select saved game…' : 'No saved games';
+    sel.appendChild(placeholder);
+
+    saves.forEach(entry => {
+      const opt = document.createElement('option');
+      opt.value = String(entry.id);
+      const dateStr = new Date(entry.timestamp).toLocaleString();
+      opt.textContent = `${entry.name} (${dateStr})`;
+      sel.appendChild(opt);
+    });
+
+    const hasSaves = saves.length > 0;
+    sel.disabled = !hasSaves;
+    loadBtn.disabled = !hasSaves;
+    delBtn.disabled = !hasSaves;
+  }
+
+  // --------- Helpers ---------
+
+  function getPlayerById(id) {
+    return state.players.find(p => p.id === id) || null;
+  }
+
+  function getPlayerName(id) {
+    const p = getPlayerById(id);
+    return p ? p.name : '';
+  }
+
+  function incrementPointsForOnCourtPlayers() {
+    state.rotation.forEach(id => {
+      if (!id) return;
+      const p = getPlayerById(id);
+      if (p) p.points += 1;
+    });
+  }
+
+  // rotation index 0..5 => positions 1..6
+  function getPlayerIdAtPosition(posNumber) {
+    const idx = posNumber - 1;
+    return state.rotation[idx];
+  }
+
+  // --------- Actions ---------
+
+  function loadLineupFromTextarea() {
+    const text = document.getElementById('lineup-input').value;
+    const rawLines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+
+    if (rawLines.length === 0) {
+      alert("Please enter at least one player name.");
+      return;
+    }
+
+    pushHistory();
+
+    const oldPlayersByName = {};
+    state.players.forEach(p => {
+      oldPlayersByName[p.name] = p;
+    });
+
+    const newPlayers = [];
+    let nextId = 1;
+
+    for (const name of rawLines) {
+      let existing = oldPlayersByName[name];
+      if (!existing) {
+        existing = { id: nextId, name: name, points: 0 };
+      } else {
+        existing = { id: nextId, name: existing.name, points: existing.points };
+      }
+      newPlayers.push(existing);
+      nextId += 1;
+    }
+
+    state.players = newPlayers;
+    state.nextPlayerId = nextId;
+
+    const ids = newPlayers.map(p => p.id);
+    // First six are positions 1..6
+    state.rotation = ids.slice(0, 6);
+    state.bench = ids.slice(6);
+
+    state.pendingSub = null;
+
+    render();
+  }
+
+  // Volleyball rotation: 1 -> 6 -> 5 -> 4 -> 3 -> 2 -> 1
+  // Internally rotation[0] = pos1, ..., rotation[5] = pos6
+
+  // "Forward" = real volleyball rotation (1 to 6)
+  function rotateForward() {
+    if (state.rotation.length < 2) return;
+    pushHistory();
+    // Left-rotate: [p1,p2,p3,p4,p5,p6] -> [p2,p3,p4,p5,p6,p1]
+    const first = state.rotation[0];
+    state.rotation = state.rotation.slice(1).concat([first]);
+    render();
+  }
+
+  // "Backward" = reverse of that rotation (6 back to 1)
+  function rotateBackward() {
+    if (state.rotation.length < 2) return;
+    pushHistory();
+    // Right-rotate: [p1,p2,p3,p4,p5,p6] -> [p6,p1,p2,p3,p4,p5]
+    const last = state.rotation[state.rotation.length - 1];
+    state.rotation = [last].concat(state.rotation.slice(0, state.rotation.length - 1));
+    render();
+  }
+
+  function scorePoint(team) {
+    pushHistory();
+
+    if (team === 'us') {
+      if (state.serving === 'them') {
+        // sideout: they served, we win rally -> we get serve & rotate (1 -> 6)
+        state.serving = 'us';
+        if (state.rotation.length >= 2) {
+          const first = state.rotation[0];
+          state.rotation = state.rotation.slice(1).concat([first]);
+        }
+      }
+      state.ourScore += 1;
+      normalizeOpponent().run = 0;   // any point of ours ends their run
+    } else {
+      if (state.serving === 'us') {
+        // we served, lost rally -> they get serve, no rotation for us.
+        // They rotate, so a new jersey comes up to serve. The point that won
+        // them the serve was won while receiving, so it is credited to nobody.
+        state.serving = 'them';
+        advanceOppServer();
+      } else {
+        // they were already serving: same server, credit the point to them
+        creditOppPoint();
+      }
+      state.theirScore += 1;
+    }
+
+    incrementPointsForOnCourtPlayers();
+    render();
+  }
+
+  function toggleServing() {
+    pushHistory();
+    state.serving = (state.serving === 'us') ? 'them' : 'us';
+    // This is a correction, not a rally, so it never advances their rotation.
+    // It does establish slot 0 when the set opens with them serving.
+    if (state.serving === 'them' && normalizeOpponent().serverIdx === null) {
+      state.opponent.serverIdx = 0;
+    }
+    render();
+  }
+
+  function toggleSubMode() {
+    pushHistory();
+    state.subMode = !state.subMode;
+    state.pendingSub = null;
+    render();
+  }
+
+  function handlePlayerClick(group, playerId) {
+    if (!state.subMode) return;
+
+    const pending = state.pendingSub;
+    if (!pending) {
+      state.pendingSub = { group, playerId };
+      render();
+      return;
+    }
+
+    if (pending.playerId === playerId || pending.group === group) {
+      state.pendingSub = null;
+      render();
+      return;
+    }
+
+    let courtId, benchId;
+    if (group === 'court') {
+      courtId = playerId;
+      benchId = pending.playerId;
+    } else {
+      courtId = pending.playerId;
+      benchId = playerId;
+    }
+
+    if (!state.rotation.includes(courtId) || !state.bench.includes(benchId)) {
+      state.pendingSub = null;
+      render();
+      return;
+    }
+
+    pushHistory();
+
+    state.rotation = state.rotation.map(id => id === courtId ? benchId : id);
+    state.bench = state.bench.map(id => id === benchId ? courtId : id);
+
+    // Log substitution in game log (newest first)
+    state.substitutions.unshift({
+      kind: 'sub',
+      inId: benchId,
+      outId: courtId,
+      setNumber: state.setNumber,
+      score: state.ourScore + "-" + state.theirScore
+    });
+
+    state.pendingSub = null;
+    render();
+  }
+
+  function newSet() {
+    pushHistory();
+
+    // Log final score of the set we're ending
+    state.substitutions.unshift({
+      kind: 'setEnd',
+      setNumber: state.setNumber,
+      score: state.ourScore + "-" + state.theirScore
+    });
+
+    // File the set we just played, then carry their order into the next set
+    // as a starting guess: teams usually keep the same serving order.
+    recordCurrentOpponentSet();
+    const opponent = normalizeOpponent();
+    if (opponent.order.some(j => j !== null)) {
+      opponent.carriedFrom = state.setNumber;
+    }
+    opponent.conceded = {};
+    opponent.serverIdx = null;
+    opponent.run = 0;
+    editingOppSlot = false;
+
+    // Advance to next set and reset scores
+    state.setNumber += 1;
+    state.ourScore = 0;
+    state.theirScore = 0;
+    state.serving = 'us';
+    state.pendingSub = null;
+    render();
+  }
+
+  function resetApp() {
+    if (!confirm("Reset app? This will clear scores, sets, points, lineup, and substitutions. Saved games will be retained and can be manually deleted.")) {
+      return;
+    }
+    try {
+      localStorage.removeItem(STORAGE_KEY_AUTO);
+    } catch (e) {}
+    state = createInitialState();
+    historyStack = [];
+    render();
+  }
+
+  function undoLast() {
+    if (historyStack.length === 0) return;
+    const snapshot = historyStack.pop();
+    restoreState(snapshot);
+  }
+
+  // --------- Saved games actions ---------
+
+  function saveCurrentGameAsSnapshot() {
+    const name = prompt("Name this game (e.g., 'vs Panthers Set 2'):");
+    if (!name) return;
+    const saves = getSavedGames();
+    const now = Date.now();
+    const entry = {
+      id: now,
+      name: name,
+      timestamp: now,
+      state: cloneState(state)
+    };
+    saves.push(entry);
+    setSavedGames(saves);
+    // Saving is the closest thing to an end-of-match step, so file the set in
+    // progress too. Keyed by date + set number, so ending the set later
+    // updates this record rather than adding a second one.
+    recordCurrentOpponentSet();
+    render();
+  }
+
+  function loadSelectedSavedGame() {
+    const sel = document.getElementById('saved-games-select');
+    if (!sel) return;
+    const idStr = sel.value;
+    if (!idStr) return;
+
+    const saves = getSavedGames();
+    const entry = saves.find(e => String(e.id) === idStr);
+    if (!entry) return;
+
+    if (!confirm(`Load "${entry.name}"? Current game state will be replaced.`)) {
+      return;
+    }
+
+    pushHistory();
+    state = cloneState(entry.state);
+    render();
+  }
+
+  function deleteSelectedSavedGame() {
+    const sel = document.getElementById('saved-games-select');
+    if (!sel) return;
+    const idStr = sel.value;
+    if (!idStr) return;
+
+    const saves = getSavedGames();
+    const entry = saves.find(e => String(e.id) === idStr);
+    if (!entry) return;
+
+    if (!confirm(`Delete saved game "${entry.name}"? This cannot be undone.`)) {
+      return;
+    }
+
+    const remaining = saves.filter(e => String(e.id) !== idStr);
+    setSavedGames(remaining);
+    refreshSavedGamesDropdown();
+  }
+
+  // --------- Opponent serving rotation ---------
+
+  // UI-only flags. Deliberately not in state: toggling a panel or opening an
+  // edit box is not a game event and should not land on the undo stack.
+  let opponentsPanelOpen = false;
+  let editingOppSlot = false;
+  let oppOrderRowOpen = false;
+
+  // Saved states written before this existed have no opponent, and a partly
+  // written one should not take the app down courtside.
+  function normalizeOpponent() {
+    let o = state.opponent;
+    if (!o || typeof o !== 'object' || Array.isArray(o)) {
+      o = state.opponent = createEmptyOpponent();
+    }
+    if (typeof o.name !== 'string') o.name = '';
+    if (!Array.isArray(o.order) || o.order.length !== 6) {
+      const src = Array.isArray(o.order) ? o.order : [];
+      o.order = [0, 1, 2, 3, 4, 5].map(i => (src[i] == null ? null : String(src[i])));
+    }
+    if (typeof o.serverIdx !== 'number' || o.serverIdx < 0 || o.serverIdx > 5) {
+      o.serverIdx = null;
+    }
+    if (!o.conceded || typeof o.conceded !== 'object' || Array.isArray(o.conceded)) {
+      o.conceded = {};
+    } else {
+      // Keys are slot indexes. Drop anything else so a stray key cannot show
+      // up as a phantom position.
+      Object.keys(o.conceded).forEach(k => {
+        const n = Number(k);
+        if (!Number.isInteger(n) || n < 0 || n > 5 || typeof o.conceded[k] !== 'number') {
+          delete o.conceded[k];
+        }
+      });
+    }
+    if (typeof o.run !== 'number' || !isFinite(o.run) || o.run < 0) o.run = 0;
+    return o;
+  }
+
+  // "#12" once known, "#? (position 3)" until then. Their serving slots are
+  // numbered 1-6 in serving order.
+  function oppSlotLabel(o, slot) {
+    const jersey = o.order[slot];
+    return jersey ? ('#' + jersey) : ('#? (position ' + (slot + 1) + ')');
+  }
+
+  // Jerseys are numbers. Strip anything else so "#12" and "12" are one key.
+  function cleanJersey(raw) {
+    const digits = String(raw == null ? '' : raw).replace(/[^0-9]/g, '').slice(0, 3);
+    return digits.length ? digits : null;
+  }
+
+  function currentOppJersey() {
+    const o = normalizeOpponent();
+    return o.serverIdx === null ? null : o.order[o.serverIdx];
+  }
+
+  function oppOrderComplete() {
+    return normalizeOpponent().order.every(j => j !== null);
+  }
+
+  // They advance one slot each time they gain serve, which only happens when
+  // they win a rally we served. Scoring while already serving does not move
+  // them. Whoever serves first, that server is slot 0.
+  function advanceOppServer() {
+    const o = normalizeOpponent();
+    o.serverIdx = (o.serverIdx === null) ? 0 : (o.serverIdx + 1) % 6;
+    o.run = 0;  // new server, new run
+  }
+
+  // Credited to the slot, so it works whether or not the jersey is known yet.
+  function creditOppPoint() {
+    const o = normalizeOpponent();
+    if (o.serverIdx === null) return;
+    const key = String(o.serverIdx);
+    o.conceded[key] = (o.conceded[key] || 0) + 1;
+    o.run += 1;
+  }
+
+  // Their current server has scored this many straight. At 3 the control gets
+  // prominent so the number is easy to enter exactly when it starts mattering.
+  function oppRunIsNotable() {
+    return normalizeOpponent().run >= 3;
+  }
+
+  // Labels one slot. Points already recorded against that slot now display
+  // under this number; nothing needs moving, because the key was the slot.
+  function setSlotJersey(slot, raw) {
+    const o = normalizeOpponent();
+    if (!Number.isInteger(slot) || slot < 0 || slot > 5) return;
+    const jersey = cleanJersey(raw);
+    editingOppSlot = false;
+    if (!jersey) { render(); return; }         // reject empty, put the UI back
+    const previous = o.order[slot];
+    if (previous === jersey) { render(); return; }
+
+    pushHistory();
+    o.order[slot] = jersey;
+    // Their subs enter in the same position (15.3.2), so a slot changing
+    // mid-set is normal. Log it rather than silently overwriting.
+    if (previous) {
+      state.substitutions.unshift({
+        kind: 'oppServer',
+        slot: slot,
+        fromJersey: previous,
+        toJersey: jersey,
+        setNumber: state.setNumber,
+        score: state.ourScore + "-" + state.theirScore
+      });
+    }
+    render();
+  }
+
+  function setOppServerJersey(raw) {
+    const o = normalizeOpponent();
+    if (o.serverIdx === null) return;
+    setSlotJersey(o.serverIdx, raw);
+  }
+
+  function setOpponentName(raw) {
+    const o = normalizeOpponent();
+    const name = String(raw == null ? '' : raw).trim().slice(0, 40);
+    if (name === o.name) return;
+    pushHistory();
+    o.name = name;
+    render();
+  }
+
+  // --------- Opponent library (jersey numbers, dates and counts only) ---------
+
+  function getOpponentLibrary() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_OPPONENTS);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function setOpponentLibrary(lib) {
+    try {
+      localStorage.setItem(STORAGE_KEY_OPPONENTS, JSON.stringify(lib));
+    } catch (e) {
+      // ignore storage errors
+    }
+  }
+
+  // Records the current set against the team name. Keyed by date + set number
+  // so saving mid-set and then ending the set updates one record instead of
+  // writing two. Needs a team name to file it under; silent no-op without one.
+  function recordCurrentOpponentSet() {
+    const o = normalizeOpponent();
+    if (!o.name) return false;
+    const hasAnything = o.order.some(j => j !== null) || Object.keys(o.conceded).length > 0;
+    if (!hasAnything) return false;
+
+    const now = new Date();
+    const day = now.toISOString().slice(0, 10);
+    const lib = getOpponentLibrary();
+    const entry = lib[o.name] && typeof lib[o.name] === 'object' ? lib[o.name] : { sets: [] };
+    if (!Array.isArray(entry.sets)) entry.sets = [];
+
+    const record = {
+      date: day,
+      setNumber: state.setNumber,
+      order: o.order.slice(),
+      conceded: JSON.parse(JSON.stringify(o.conceded))
+    };
+    const existing = entry.sets.findIndex(
+      s => s && s.date === day && s.setNumber === state.setNumber
+    );
+    if (existing === -1) entry.sets.push(record);
+    else entry.sets[existing] = record;
+
+    entry.lastSeen = now.toISOString();
+    lib[o.name] = entry;
+    setOpponentLibrary(lib);
+    return true;
+  }
+
+  function deleteOpponent(name) {
+    if (!confirm(`Delete everything recorded for "${name}"? This cannot be undone.`)) return;
+    const lib = getOpponentLibrary();
+    delete lib[name];
+    setOpponentLibrary(lib);
+    render();
+  }
+
+  // --------- Rendering ---------
+
+  function render() {
+    document.getElementById('our-score').textContent = state.ourScore;
+    document.getElementById('their-score').textContent = state.theirScore;
+    document.getElementById('set-number').textContent = state.setNumber;
+
+    const servingElem = document.getElementById('serving-indicator');
+    servingElem.textContent = state.serving === 'us' ? 'Us' : 'Them';
+    servingElem.classList.toggle('serving-us', state.serving === 'us');
+    servingElem.classList.toggle('serving-them', state.serving === 'them');
+
+    const subBtn = document.getElementById('sub-mode-btn');
+    if (state.subMode) {
+      subBtn.textContent = "Sub Mode: On";
+      subBtn.classList.add('toggle-on');
+    } else {
+      subBtn.textContent = "Sub Mode: Off";
+      subBtn.classList.remove('toggle-on');
+    }
+
+    updateUndoButton();
+
+    // Court: position layout [4,3,2,5,6,1] = top-left -> bottom-right
+    const positionOrder = [4, 3, 2, 5, 6, 1];
+    const court = document.getElementById('court');
+    court.innerHTML = '';
+    const pending = state.pendingSub;
+
+    for (let i = 0; i < 6; i++) {
+      const posNumber = positionOrder[i];
+      const cell = document.createElement('div');
+      cell.className = 'court-cell';
+
+      const label = document.createElement('div');
+      label.className = 'pos-label';
+      label.textContent = "Pos " + posNumber;
+      cell.appendChild(label);
+
+      const playerId = getPlayerIdAtPosition(posNumber);
+      if (!playerId) {
+        const emptyDiv = document.createElement('div');
+        emptyDiv.className = 'player-card empty';
+        emptyDiv.textContent = 'Empty';
+        cell.appendChild(emptyDiv);
+      } else {
+        const player = getPlayerById(playerId);
+        const card = document.createElement('div');
+        card.className = 'player-card';
+        card.dataset.playerId = playerId;
+        card.dataset.group = 'court';
+
+        if (pending && pending.group === 'court' && pending.playerId === playerId) {
+          card.classList.add('sub-pending');
+        }
+
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'player-name';
+        nameDiv.textContent = player.name;
+
+        const metaDiv = document.createElement('div');
+        metaDiv.className = 'player-meta';
+        metaDiv.textContent = "Pts: " + player.points;
+
+        card.appendChild(nameDiv);
+        card.appendChild(metaDiv);
+
+        card.addEventListener('click', () => handlePlayerClick('court', playerId));
+
+        cell.appendChild(card);
+      }
+
+      court.appendChild(cell);
+    }
+
+    // Bench
+    const benchList = document.getElementById('bench-list');
+    benchList.innerHTML = '';
+
+    state.bench.forEach(id => {
+      const player = getPlayerById(id);
+      if (!player) return;
+      const card = document.createElement('div');
+      card.className = 'player-card';
+      card.dataset.playerId = id;
+      card.dataset.group = 'bench';
+
+      if (pending && pending.group === 'bench' && pending.playerId === id) {
+        card.classList.add('sub-pending');
+      }
+
+      const nameDiv = document.createElement('div');
+      nameDiv.className = 'player-name';
+      nameDiv.textContent = player.name;
+
+      const metaDiv = document.createElement('div');
+      metaDiv.className = 'player-meta';
+      metaDiv.textContent = "Pts: " + player.points;
+
+      card.appendChild(nameDiv);
+      card.appendChild(metaDiv);
+
+      card.addEventListener('click', () => handlePlayerClick('bench', id));
+
+      benchList.appendChild(card);
+    });
+
+    // Game log (subs + set ends)
+    const subsLog = document.getElementById('subs-log-list');
+    subsLog.innerHTML = '';
+    state.substitutions.forEach(entry => {
+      const div = document.createElement('div');
+      div.className = 'sub-entry';
+
+      if (entry.kind === 'setEnd') {
+        div.textContent = `End Set ${entry.setNumber}: ${entry.score}`;
+      } else if (entry.kind === 'oppServer') {
+        div.textContent = `Set ${entry.setNumber} @ ${entry.score}: their slot ${entry.slot + 1} #${entry.fromJersey} -> #${entry.toJersey}`;
+      } else {
+        // substitution (backward compatible with older saves)
+        const inName = getPlayerName(entry.inId);
+        const outName = getPlayerName(entry.outId);
+        div.textContent = `Set ${entry.setNumber} @ ${entry.score}: ${inName} in for ${outName}`;
+      }
+
+      subsLog.appendChild(div);
+    });
+
+    renderOpponent();
+
+    // Save current state automatically & refresh saved list UI
+    saveAutoState();
+    refreshSavedGamesDropdown();
+  }
+
+  // "Their server: #12  next #4", or a box to type the jersey when the slot
+  // is still unknown. "next" only once all six slots are known, because until
+  // then it would be a guess.
+  function buildOppServerControl(control, o) {
+    control.innerHTML = '';
+    control.classList.remove('opp-run');
+    if (state.serving !== 'them' || o.serverIdx === null) return;
+
+    const notable = oppRunIsNotable();
+    if (notable) control.classList.add('opp-run');
+
+    const jersey = o.order[o.serverIdx];
+    const shown = document.createElement('span');
+    shown.className = 'opp-jersey';
+    shown.textContent = 'Their server: ' + oppSlotLabel(o, o.serverIdx);
+    control.appendChild(shown);
+
+    // The count is the message. No instruction to the coach.
+    if (notable) {
+      const run = document.createElement('span');
+      run.className = 'opp-run-count';
+      run.textContent = ': ' + o.run + ' straight';
+      control.appendChild(run);
+    }
+
+    // Unknown slot, or correcting a known one: the box is right here, so
+    // entry is a tap on the current slot rather than a prompt.
+    if (!jersey || editingOppSlot) {
+      const input = document.createElement('input');
+      input.id = 'opp-server-input';
+      input.type = 'text';
+      input.inputMode = 'numeric';
+      input.value = jersey || '';
+      input.addEventListener('change', e => setOppServerJersey(e.target.value));
+      input.addEventListener('blur', e => setOppServerJersey(e.target.value));
+      control.appendChild(input);
+      return;
+    }
+
+    if (oppOrderComplete()) {
+      const nextSpan = document.createElement('span');
+      nextSpan.textContent = 'next ' + oppSlotLabel(o, (o.serverIdx + 1) % 6);
+      control.appendChild(nextSpan);
+    }
+
+    const edit = document.createElement('span');
+    edit.className = 'opp-link';
+    edit.textContent = 'wrong number?';
+    edit.addEventListener('click', () => { editingOppSlot = true; render(); });
+    control.appendChild(edit);
+  }
+
+  // Six fields for the whole serving order, for a coach who has their lineup
+  // sheet at the start of a set. Entirely optional.
+  function buildOppOrderRow(row, o) {
+    row.innerHTML = '';
+    const label = document.createElement('span');
+    label.className = 'small-label';
+    label.textContent = 'Their serving order';
+    row.appendChild(label);
+
+    for (let slot = 0; slot < 6; slot++) {
+      const input = document.createElement('input');
+      input.className = 'opp-slot-input';
+      input.type = 'text';
+      input.inputMode = 'numeric';
+      input.placeholder = String(slot + 1);
+      input.value = o.order[slot] || '';
+      if (o.serverIdx === slot) input.classList.add('serving-slot');
+      input.addEventListener('change', e => setSlotJersey(slot, e.target.value));
+      row.appendChild(input);
+    }
+  }
+
+  // Reports jersey numbers and counts. No evaluation of the opposing players.
+  function renderOpponent() {
+    const o = normalizeOpponent();
+
+    const nameInput = document.getElementById('opponent-name');
+    if (document.activeElement !== nameInput) nameInput.value = o.name;
+
+    // Server control: only while they are serving, to keep the line quiet.
+    // Every point re-renders, so leave the box alone while it is being typed
+    // in or a half-entered jersey would vanish.
+    const control = document.getElementById('opp-server-control');
+    const active = document.activeElement;
+    if (!(active && active.id === 'opp-server-input')) {
+      buildOppServerControl(control, o);
+    }
+
+    const orderRow = document.getElementById('opp-order-row');
+    orderRow.hidden = !oppOrderRowOpen;
+    const typingSlot = !!(active && active.classList && active.classList.contains('opp-slot-input'));
+    if (oppOrderRowOpen && !typingSlot) {
+      buildOppOrderRow(orderRow, o);
+    }
+
+    const carried = document.getElementById('opp-carried-note');
+    carried.textContent = (o.carriedFrom && o.order.some(j => j !== null))
+      ? `Their order carried from set ${o.carriedFrom}; edit if they changed it.`
+      : '';
+
+    // Points they scored while each slot served, this set. Keyed by slot, so
+    // a slot with no jersey yet still shows its count.
+    const conceded = document.getElementById('opp-conceded');
+    const parts = [];
+    for (let slot = 0; slot < 6; slot++) {
+      const points = o.conceded[String(slot)];
+      if (points) parts.push(oppSlotLabel(o, slot) + ' ' + points);
+    }
+    conceded.textContent = parts.length
+      ? 'Their points by server: ' + parts.join(' · ')
+      : '';
+
+    // Opponent library, collapsed by default.
+    const panel = document.getElementById('opponents-panel');
+    panel.hidden = !opponentsPanelOpen;
+    panel.innerHTML = '';
+    if (opponentsPanelOpen) {
+      const lib = getOpponentLibrary();
+      const names = Object.keys(lib).sort();
+      if (!names.length) {
+        const empty = document.createElement('div');
+        empty.className = 'small-label';
+        empty.textContent = 'No opponents recorded yet.';
+        panel.appendChild(empty);
+      }
+      names.forEach(name => {
+        const entry = lib[name] || {};
+        const sets = Array.isArray(entry.sets) ? entry.sets : [];
+        const row = document.createElement('div');
+        row.className = 'opp-entry';
+
+        const text = document.createElement('div');
+        const seen = entry.lastSeen ? new Date(entry.lastSeen).toLocaleDateString() : 'unknown';
+        text.textContent = `${name} - last seen ${seen} - ${sets.length} set${sets.length === 1 ? '' : 's'}`;
+        row.appendChild(text);
+
+        const del = document.createElement('button');
+        del.textContent = 'Delete';
+        del.addEventListener('click', () => deleteOpponent(name));
+        row.appendChild(del);
+
+        panel.appendChild(row);
+      });
+    }
+  }
+
+  // --------- Event wiring ---------
+
+  document.addEventListener('DOMContentLoaded', () => {
+    // Try to restore previous automatic state first
+    loadAutoStateIfAny();
+
+    document.getElementById('load-lineup-btn').addEventListener('click', loadLineupFromTextarea);
+    document.getElementById('rotate-forward-btn').addEventListener('click', rotateForward);
+    document.getElementById('rotate-back-btn').addEventListener('click', rotateBackward);
+    document.getElementById('score-us-btn').addEventListener('click', () => scorePoint('us'));
+    document.getElementById('score-them-btn').addEventListener('click', () => scorePoint('them'));
+    document.getElementById('serving-indicator').addEventListener('click', toggleServing);
+    document.getElementById('sub-mode-btn').addEventListener('click', toggleSubMode);
+    document.getElementById('new-set-btn').addEventListener('click', newSet);
+    document.getElementById('reset-btn').addEventListener('click', resetApp);
+    document.getElementById('undo-btn').addEventListener('click', undoLast);
+
+    document.getElementById('save-game-btn').addEventListener('click', saveCurrentGameAsSnapshot);
+    document.getElementById('load-game-btn').addEventListener('click', loadSelectedSavedGame);
+    document.getElementById('delete-game-btn').addEventListener('click', deleteSelectedSavedGame);
+
+    // Opponent controls. Commit on change/blur so typing does not spam undo.
+    document.getElementById('opponent-name')
+      .addEventListener('change', e => setOpponentName(e.target.value));
+    document.getElementById('opponent-name')
+      .addEventListener('blur', e => setOpponentName(e.target.value));
+    document.getElementById('opp-order-btn').addEventListener('click', () => {
+      oppOrderRowOpen = !oppOrderRowOpen;
+      render();
+    });
+    document.getElementById('opponents-btn').addEventListener('click', () => {
+      opponentsPanelOpen = !opponentsPanelOpen;
+      render();
+    });
+
+    render();
+  });
+</script>
+</body>
+</html>

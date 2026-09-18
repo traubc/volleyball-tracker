@@ -1,0 +1,1716 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>Volleyball Lineup Tracker</title>
+      <meta name="viewport"
+            content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+      <!-- iOS home-screen app settings -->
+      <meta name="apple-mobile-web-app-capable" content="yes">
+      <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+      <meta name="apple-mobile-web-app-title" content="Lineup">
+
+      <!-- App icon (add this file to your repo) -->
+      <link rel="apple-touch-icon" href="vb-icon192.png">
+      <style>
+    * {
+      box-sizing: border-box;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      margin: 0;
+      padding: 0.5rem;
+      background: #111;
+      color: #f5f5f5;
+      touch-action: manipulation;
+    }
+
+    h1 {
+      font-size: 1.3rem;
+      margin: 0.5rem 0;
+      text-align: center;
+    }
+
+    .app {
+      max-width: 900px;
+      margin: 0 auto;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 0.5rem;
+      background: #1b1b1b;
+    }
+
+    section {
+      margin-bottom: 0.6rem;
+    }
+
+    #import-area {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    #lineup-input {
+      width: 100%;
+      min-height: 70px;
+      background: #111;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 0.4rem;
+      font-size: 0.8rem;
+    }
+
+    button {
+      padding: 0.3rem 0.6rem;
+      margin: 0.1rem;
+      border-radius: 4px;
+      border: 1px solid #555;
+      background: #2a2a2a;
+      color: #f5f5f5;
+      font-size: 0.8rem;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+    }
+
+    button.primary {
+      background: #2b7cff;
+      border-color: #2b7cff;
+      color: #fff;
+    }
+
+    button.danger {
+      background: #b00020;
+      border-color: #b00020;
+      color: #fff;
+    }
+
+    button.toggle-on {
+      background: #0e8a3a;
+      border-color: #0e8a3a;
+    }
+
+    .status-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 0.3rem 0.4rem;
+    }
+
+    .score {
+      font-size: 1.6rem;
+      font-weight: 700;
+      display: flex;
+      gap: 0.6rem;
+      align-items: baseline;
+    }
+
+    .score span span {
+      font-size: 1.8rem;
+    }
+
+    .controls-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      justify-content: center;
+      margin-top: 0.3rem;
+    }
+
+    .controls-row button {
+      font-size: 0.95rem;
+      padding: 0.45rem 0.9rem;
+    }
+
+    .big-score {
+      font-size: 1.15rem;
+      padding: 0.55rem 1.1rem;
+      font-weight: 600;
+    }
+
+    .layout {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .panel {
+      flex: 1 1 200px;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 0.4rem;
+      min-height: 120px;
+    }
+
+    .panel h2 {
+      font-size: 0.9rem;
+      margin: 0 0 0.3rem 0;
+    }
+
+    #court {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-auto-rows: 72px;
+      gap: 0.25rem;
+    }
+
+    .court-cell {
+      border-radius: 6px;
+      border: 1px solid #444;
+      background: #18232e;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      padding: 0.2rem;
+      font-size: 0.7rem;
+      text-align: center;
+    }
+
+    .court-cell.empty {
+      opacity: 0.5;
+      font-style: italic;
+    }
+
+    .pos-label {
+      font-size: 0.7rem;
+      opacity: 0.8;
+      text-align: left;
+      margin-bottom: 0.1rem;
+    }
+
+    .player-card {
+      width: 100%;
+      border-radius: 6px;
+      padding: 0.25rem;
+      border: 1px solid #555;
+      background: #222;
+      cursor: pointer;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .player-name {
+      font-size: 1.0rem;
+      font-weight: 600;
+      margin-bottom: 0.1rem;
+    }
+
+    .player-meta {
+      font-size: 0.75rem;
+      opacity: 0.85;
+    }
+
+    #bench-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .sub-pending {
+      border: 2px solid #f4d03f !important;
+      box-shadow: 0 0 4px #f4d03f;
+    }
+
+    #subs-log-list {
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: 0.8rem;
+    }
+
+    .sub-entry {
+      padding: 0.2rem 0;
+      border-bottom: 1px solid #333;
+    }
+
+    .small-label {
+      font-size: 0.7rem;
+      opacity: 0.7;
+    }
+
+    /* Their servers x our rotations, and the post-match review. */
+    .review-section {
+      margin-top: 0.4rem;
+    }
+
+    .panel-toggles {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      align-items: center;
+    }
+
+    .collapsible {
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 0.4rem;
+      margin-top: 0.3rem;
+      font-size: 0.8rem;
+      overflow-x: auto;
+    }
+
+    .grid-read {
+      color: #c9a227;
+      margin-bottom: 0.25rem;
+    }
+
+    table.grid {
+      border-collapse: collapse;
+      font-size: 0.75rem;
+    }
+
+    table.grid th,
+    table.grid td {
+      border: 1px solid #333;
+      padding: 0.15rem 0.35rem;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    table.grid th {
+      font-weight: 600;
+      opacity: 0.85;
+    }
+
+    table.grid td.empty {
+      opacity: 0.35;
+    }
+
+    .review-set,
+    .review-player {
+      padding: 0.15rem 0;
+      border-bottom: 1px solid #262626;
+      white-space: nowrap;
+    }
+
+    .review-players {
+      margin-top: 0.4rem;
+    }
+
+    .serving-indicator {
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      border: 1px solid #555;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    .serving-us {
+      background: #0e8a3a;
+    }
+
+    .serving-them {
+      background: #8a4b0e;
+    }
+
+    /* Rally log: clock, the transient serve-miss tap, the set-chance line. */
+    .rally-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+
+    .serve-miss-tap {
+      font-size: 0.7rem;
+      padding: 0.1rem 0.35rem;
+      border: 1px solid #c9a227;
+      border-radius: 4px;
+      color: #c9a227;
+      cursor: pointer;
+    }
+
+    .serve-miss-tap.flagged {
+      background: #c9a227;
+      color: #111;
+    }
+
+    #set-chance {
+      color: #c9a227;
+    }
+
+    .saved-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .saved-controls select {
+      font-size: 0.8rem;
+      max-width: 180px;
+    }
+
+    .saved-controls button {
+      font-size: 0.85rem;
+      padding: 0.35rem 0.8rem;
+    }
+
+    .bottom-section {
+      margin-top: 0.4rem;
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <h1>Volleyball Lineup Tracker</h1>
+
+  <!-- Lineup Import -->
+  <section id="import-area">
+    <label for="lineup-input" class="small-label">
+      Lineup (one name per line in serving order) then bench (any order).
+    </label>
+    <textarea id="lineup-input" placeholder="e.g.
+Setter
+Middle 1
+Outside 1
+Opposite
+Middle 2
+Outside 2
+DS 1
+DS 2"></textarea>
+    <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
+      <button id="load-lineup-btn" class="primary">Load / Update<br>Lineup</button>
+
+      <!-- Rotation buttons moved here -->
+      <div>
+          <span class="small-label">Rotate</span>
+          
+          <button id="rotate-back-btn">◀︎</button>
+          <button id="rotate-forward-btn">▶︎</button>
+        <span class="small-label">Serving:</span>
+        <span id="serving-indicator" class="serving-indicator serving-us">Us</span>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- Status & Controls -->
+  <section>
+    <div class="status-row">
+      <div>Set: <span id="set-number">1</span></div>
+      <div class="score">
+        <span>Us: <span id="our-score">0</span></span>
+        <span>Them: <span id="their-score">0</span></span>
+      </div>
+
+      <div class="rally-meta">
+        <span id="clock-readout" class="small-label"></span>
+        <span id="serve-miss-tap" class="serve-miss-tap" hidden>missed serve</span>
+        <span id="set-chance" class="small-label" hidden></span>
+      </div>
+    </div>
+
+    <div class="controls-row">
+
+      <button id="score-us-btn" class="primary big-score">Us +1</button>
+      <button id="score-them-btn" class="primary big-score">Them +1</button>
+
+      <button id="undo-btn">Undo</button>
+      <button id="new-set-btn">New Set</button>
+
+      <button id="sub-mode-btn">Sub Mode: Off</button>
+    </div>
+  </section>
+
+  <!-- Layout: Court / Bench / Game Log -->
+  <section class="layout">
+    <div class="panel">
+      <h2>Court</h2>
+      <div id="court"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Bench</h2>
+      <div id="bench-list"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Game Log</h2>
+      <div id="subs-log-list"></div>
+    </div>
+  </section>
+
+  <!-- Their servers x our rotations, and the post-match review -->
+  <section class="review-section">
+    <div class="panel-toggles">
+      <button id="grid-toggle-btn">Their servers</button>
+      <button id="review-toggle-btn">Review</button>
+    </div>
+    <div id="grid-panel" class="collapsible" hidden></div>
+    <div id="review-panel" class="collapsible" hidden></div>
+  </section>
+
+  <!-- Saved games + Reset (bottom of view) -->
+  <section class="bottom-section">
+    <div class="status-row">
+      <div class="small-label">Game Management (this device only)</div>
+      <div class="saved-controls">
+        <button id="save-game-btn">Save Game</button>
+        <select id="saved-games-select"></select>
+        <button id="load-game-btn">Load</button>
+        <button id="delete-game-btn">Delete</button>
+        <button id="export-rallies-btn">Export rally log</button>
+        <button id="chance-toggle-btn">Set chance: Off</button>
+        <button id="reset-btn" class="danger">Reset App</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  // --------- Storage keys ---------
+  const STORAGE_KEY_AUTO = 'vb_lineup_auto_state_v1';
+  const STORAGE_KEY_SAVES = 'vb_lineup_saved_states_v1';
+
+  // --------- State management ---------
+
+  function createInitialState() {
+    return {
+      players: [],          // [{id, name, points}]
+      rotation: [],         // [playerId at pos1, pos2, ..., pos6]
+      bench: [],            // [playerId,...]
+      ourScore: 0,
+      theirScore: 0,
+      serving: 'us',        // 'us' | 'them'
+      setNumber: 1,
+      subMode: false,
+      pendingSub: null,     // {group: 'court'|'bench', playerId}
+      substitutions: [],    // game log: subs + set-end entries
+      nextPlayerId: 1
+    };
+  }
+
+  let state = createInitialState();
+  let historyStack = [];
+
+  function cloneState(s) {
+    return JSON.parse(JSON.stringify(s));
+  }
+
+  function pushHistory() {
+    historyStack.push(cloneState(state));
+    updateUndoButton();
+  }
+
+  function restoreState(snapshot) {
+    state = snapshot;
+    render();
+  }
+
+  function updateUndoButton() {
+    const undoBtn = document.getElementById('undo-btn');
+    undoBtn.disabled = historyStack.length === 0;
+  }
+
+  // --------- Local storage helpers ---------
+
+  function saveAutoState() {
+    try {
+      localStorage.setItem(STORAGE_KEY_AUTO, JSON.stringify(state));
+    } catch (e) {
+      // ignore storage errors
+    }
+  }
+
+  function loadAutoStateIfAny() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_AUTO);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          state = parsed;
+        }
+      }
+    } catch (e) {
+      state = createInitialState();
+    }
+  }
+
+  function getSavedGames() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_SAVES);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function setSavedGames(list) {
+    try {
+      localStorage.setItem(STORAGE_KEY_SAVES, JSON.stringify(list));
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  function refreshSavedGamesDropdown() {
+    const sel = document.getElementById('saved-games-select');
+    const loadBtn = document.getElementById('load-game-btn');
+    const delBtn = document.getElementById('delete-game-btn');
+    if (!sel) return;
+
+    const saves = getSavedGames();
+    sel.innerHTML = '';
+
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = saves.length ? 'Select saved game…' : 'No saved games';
+    sel.appendChild(placeholder);
+
+    saves.forEach(entry => {
+      const opt = document.createElement('option');
+      opt.value = String(entry.id);
+      const dateStr = new Date(entry.timestamp).toLocaleString();
+      opt.textContent = `${entry.name} (${dateStr})`;
+      sel.appendChild(opt);
+    });
+
+    const hasSaves = saves.length > 0;
+    sel.disabled = !hasSaves;
+    loadBtn.disabled = !hasSaves;
+    delBtn.disabled = !hasSaves;
+  }
+
+  // --------- Helpers ---------
+
+  // --------- Rally log ---------
+  // One record per point:
+  //   { set, ourScore, theirScore, serving, winner, ourRotation, ourServerId,
+  //     theirSlot, theirJersey, serveMiss, t, setElapsedMs, matchElapsedMs,
+  //     pWin, pace }
+  // Scores are the scoreline after the point. serving/ourRotation/ourServerId
+  // describe the rally as it was played, which is why the record is built
+  // before scorePoint mutates anything.
+  //
+  // The array is created on demand rather than in createInitialState, so a
+  // state saved before this existed starts logging on its next point.
+
+  const CHANCE_PRIOR = 10;      // pseudo-points pulling the rate toward even
+  const PACE_MIN_TOTAL = 8;     // total points before a projection means much
+  const SET_TARGET = 25;
+
+  function rallyLog() {
+    if (!Array.isArray(state.rallies)) state.rallies = [];
+    return state.rallies;
+  }
+
+  function lastRally() {
+    const log = rallyLog();
+    return log.length ? log[log.length - 1] : null;
+  }
+
+  // "7 Maya T" -> jersey 7, name "Maya T". "2Fast" has no separator, so it
+  // is a name. A bare number is a name too: there is nobody to attach it to.
+  function parseLineupLine(line) {
+    const m = /^(\d{1,3})\s+(\S.*)$/.exec(String(line).trim());
+    if (!m) return { jersey: null, name: String(line).trim() };
+    return { jersey: m[1], name: m[2].trim() };
+  }
+
+  function playerRef(id) {
+    const p = getPlayerById(id);
+    if (!p) return null;
+    return p.jersey ? String(p.jersey) : ('id:' + id);
+  }
+
+  // Our share of points this set, shrunk toward even so an early 3-0 does not
+  // read as a rout.
+  function shrunkPointRate(our, them) {
+    return (our + CHANCE_PRIOR / 2) / (our + them + CHANCE_PRIOR);
+  }
+
+  // Probability we reach 25 first, win by two, if every rally is won with
+  // probability p. The deuce tail is the closed form rather than a recursion
+  // with a cap, so it is exact however long the set runs.
+  function setWinProbability(our, them, p) {
+    if (!(p >= 0)) p = 0;
+    if (p > 1) p = 1;
+    const q = 1 - p;
+    const memo = {};
+
+    function deuce(diff) {
+      const denom = p * p + q * q;
+      const even = denom === 0 ? 0.5 : (p * p) / denom;
+      if (diff === 0) return even;
+      if (diff >= 1) return p + q * even;
+      return p * even;
+    }
+
+    function f(a, b) {
+      if (a >= SET_TARGET && a - b >= 2) return 1;
+      if (b >= SET_TARGET && b - a >= 2) return 0;
+      if (a >= SET_TARGET - 1 && b >= SET_TARGET - 1) return deuce(a - b);
+      const key = a + ',' + b;
+      if (key in memo) return memo[key];
+      const v = p * f(a + 1, b) + q * f(a, b + 1);
+      memo[key] = v;
+      return v;
+    }
+
+    return f(our, them);
+  }
+
+  function setChance(our, them) {
+    return setWinProbability(our, them, shrunkPointRate(our, them));
+  }
+
+  // Straight-line projection: the leader reaches 25, the other side scales.
+  function paceFrom(our, them) {
+    if (our + them < PACE_MIN_TOTAL) return null;
+    if (our === them) return [SET_TARGET, SET_TARGET];
+    if (them > our) return [Math.round(our * SET_TARGET / them), SET_TARGET];
+    return [SET_TARGET, Math.round(them * SET_TARGET / our)];
+  }
+
+  function chanceLabel(pointsPlayed) {
+    if (pointsPlayed < 10) return 'early';
+    if (pointsPlayed < 20) return 'rough';
+    return 'solid';
+  }
+
+  function firstRallyTimeInSet(setNumber) {
+    const log = rallyLog();
+    for (let i = 0; i < log.length; i++) {
+      if (log[i].set === setNumber) return log[i].t;
+    }
+    return null;
+  }
+
+  function firstRallyTimeInMatch() {
+    const log = rallyLog();
+    return log.length ? log[0].t : null;
+  }
+
+  // Called from the top of scorePoint, before anything is mutated.
+  function recordRally(team, now) {
+    const log = rallyLog();
+    const t = (typeof now === 'number') ? now : Date.now();
+    const ourScore = state.ourScore + (team === 'us' ? 1 : 0);
+    const theirScore = state.theirScore + (team === 'them' ? 1 : 0);
+    const servingNow = state.serving;
+
+    // Only present once the opponent tracker (its own change) is on the page.
+    let theirSlot = null;
+    let theirJersey = null;
+    const opponent = state.opponent;
+    if (opponent && Array.isArray(opponent.order) && typeof opponent.serverIdx === 'number') {
+      theirSlot = opponent.serverIdx;
+      theirJersey = opponent.order[opponent.serverIdx] || null;
+    }
+
+    const setStart = firstRallyTimeInSet(state.setNumber);
+    const matchStart = firstRallyTimeInMatch();
+
+    log.push({
+      set: state.setNumber,
+      ourScore: ourScore,
+      theirScore: theirScore,
+      serving: servingNow,
+      winner: team,
+      ourRotation: state.rotation.slice(),
+      // Who was at position 1, resolved now. Loading a lineup renumbers player
+      // ids, so looking this up later would name the wrong player; a jersey
+      // captured at the time survives that.
+      ourRotationRef: state.rotation[0] ? playerRef(state.rotation[0]) : null,
+      ourServerId: servingNow === 'us' ? (state.rotation[0] || null) : null,
+      theirSlot: theirSlot,
+      theirJersey: theirJersey,
+      serveMiss: false,
+      t: t,
+      setElapsedMs: setStart === null ? 0 : t - setStart,
+      matchElapsedMs: matchStart === null ? 0 : t - matchStart,
+      pWin: setChance(ourScore, theirScore),
+      pace: paceFrom(ourScore, theirScore)
+    });
+  }
+
+  // Offered only for the point that just happened, and only when they scored
+  // off our serve - the one case where a service error is possible.
+  function serveMissAvailable() {
+    const last = lastRally();
+    return !!(last && last.winner === 'them' && last.serving === 'us');
+  }
+
+  function toggleServeMiss() {
+    if (!serveMissAvailable()) return;
+    pushHistory();
+    const last = lastRally();
+    last.serveMiss = !last.serveMiss;
+    render();
+  }
+
+  function toggleSetChance() {
+    pushHistory();
+    state.showSetChance = !state.showSetChance;
+    render();
+  }
+
+  function formatClock(ms) {
+    if (typeof ms !== 'number' || !isFinite(ms) || ms < 0) ms = 0;
+    const total = Math.floor(ms / 1000);
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+    const mm = hours ? String(minutes).padStart(2, '0') : String(minutes);
+    const ss = String(seconds).padStart(2, '0');
+    return hours ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
+  }
+
+  // Points on court per player, straight from the log, so exact playing-time
+  // share is computable without trusting a running counter.
+  function pointsOnCourtFromLog() {
+    const totals = {};
+    rallyLog().forEach(r => {
+      (r.ourRotation || []).forEach(id => {
+        if (!id) return;
+        totals[id] = (totals[id] || 0) + 1;
+      });
+    });
+    return totals;
+  }
+
+  // Jersey numbers and counts. Never a name: the log is the one thing here
+  // built to leave the device.
+  function buildRallyExport(now) {
+    const log = rallyLog();
+    const totals = pointsOnCourtFromLog();
+    return {
+      exportedAt: new Date(typeof now === 'number' ? now : Date.now()).toISOString(),
+      totalRallies: log.length,
+      sets: log.length ? log[log.length - 1].set : 0,
+      players: state.players.map(p => ({
+        ref: p.jersey ? String(p.jersey) : ('id:' + p.id),
+        pointsOnCourt: totals[p.id] || 0
+      })),
+      rallies: log.map(r => ({
+        set: r.set,
+        ourScore: r.ourScore,
+        theirScore: r.theirScore,
+        serving: r.serving,
+        winner: r.winner,
+        ourRotation: (r.ourRotation || []).map(id => playerRef(id)),
+        ourServer: r.ourServerId ? playerRef(r.ourServerId) : null,
+        theirSlot: r.theirSlot,
+        theirJersey: r.theirJersey,
+        serveMiss: !!r.serveMiss,
+        t: r.t,
+        setElapsedMs: r.setElapsedMs,
+        matchElapsedMs: r.matchElapsedMs,
+        pWin: r.pWin,
+        pace: r.pace
+      }))
+    };
+  }
+
+  function exportRallyLog() {
+    const data = JSON.stringify(buildRallyExport(), null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'rally-log-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // --------- Their servers x our receiving rotations ---------
+  // Built entirely from the rally log. Their slot comes from the opponent
+  // tracker when that change is on the page; without it every serve lands in
+  // one unlabelled row and the grid still reports our rotations.
+
+  // A rotation is named by whoever is at position 1, which survives a lineup
+  // change between sets in a way that "rotation 4" does not. The stored form
+  // is a jersey or an internal id, never a display name.
+  // UI-only: which panel is open. Not state, so it stays off the undo stack.
+  let gridPanelOpen = false;
+  let reviewPanelOpen = false;
+
+  function rotationKeyOf(record) {
+    if (record.ourRotationRef) return record.ourRotationRef;
+    const id = record.ourRotation && record.ourRotation[0];
+    return id ? (playerRef(id) || ('id:' + id)) : 'unknown';
+  }
+
+  function rotationDisplayOf(record) {
+    const key = rotationKeyOf(record);
+    if (key === 'unknown') return key;
+    // A jersey reads as itself. An unnumbered player is only recoverable by
+    // id, which a lineup reload may have handed to somebody else, so that
+    // case falls back to whatever the id names now.
+    if (key.indexOf('id:') !== 0) return '#' + key;
+    const player = getPlayerById(parseInt(key.slice(3), 10));
+    return player ? player.name : key;
+  }
+
+  // Row label straight off the record, so it stays right even if their order
+  // is edited later.
+  function slotLabelOf(record) {
+    if (record.theirJersey) return '#' + record.theirJersey;
+    if (typeof record.theirSlot === 'number') return '#? (position ' + (record.theirSlot + 1) + ')';
+    return 'their serve';
+  }
+
+  function slotKeyOf(record) {
+    return (typeof record.theirSlot === 'number') ? ('slot' + record.theirSlot) : 'unknown';
+  }
+
+  // A service turn is a run of consecutive rallies they served, which is also
+  // exactly one receive turn for whichever rotation we were in. Runs stop at a
+  // set boundary.
+  function serviceTurns() {
+    const log = rallyLog();
+    const turns = [];
+    let i = 0;
+    while (i < log.length) {
+      if (log[i].serving !== 'them') { i++; continue; }
+      let j = i;
+      while (j < log.length && log[j].serving === 'them' && log[j].set === log[i].set) j++;
+      const run = log.slice(i, j);
+      turns.push({
+        set: run[0].set,
+        slotKey: slotKeyOf(run[0]),
+        slotLabel: slotLabelOf(run[0]),
+        rotationKey: rotationKeyOf(run[0]),
+        rotationDisplay: rotationDisplayOf(run[0]),
+        rotationIndex: null,
+        rallies: run.length,
+        conceded: run.filter(r => r.winner === 'them').length,
+        sideouts: run.filter(r => r.winner === 'us').length
+      });
+      i = j;
+    }
+    return turns;
+  }
+
+  // R1..R6 relative to the lineup the set started with. A player subbed into
+  // position 1 mid-set is not in that lineup, so the index is simply dropped
+  // and the position-1 label carries the identity.
+  function rotationIndexFor(setNumber, record) {
+    const log = rallyLog();
+    let start = null;
+    for (let i = 0; i < log.length; i++) {
+      if (log[i].set === setNumber) { start = log[i].ourRotation || []; break; }
+    }
+    const id = record.ourRotation && record.ourRotation[0];
+    if (!start || !id) return null;
+    const at = start.indexOf(id);
+    return at === -1 ? null : (at + 1);
+  }
+
+  function buildServerGrid() {
+    const log = rallyLog();
+    const turns = serviceTurns();
+    turns.forEach(t => {
+      const first = log.find(r => r.set === t.set && r.serving === 'them' &&
+        rotationKeyOf(r) === t.rotationKey);
+      t.rotationIndex = first ? rotationIndexFor(t.set, first) : null;
+    });
+
+    const rows = {};      // their slot
+    const cols = {};      // our rotation
+    const cells = {};     // slot|rotation
+
+    turns.forEach(t => {
+      if (!rows[t.slotKey]) {
+        rows[t.slotKey] = { key: t.slotKey, label: t.slotLabel, points: 0, turns: 0, rotations: {} };
+      }
+      const row = rows[t.slotKey];
+      row.points += t.conceded;
+      row.turns += 1;
+      row.rotations[t.rotationKey] = true;
+
+      if (!cols[t.rotationKey]) {
+        cols[t.rotationKey] = {
+          key: t.rotationKey, label: t.rotationDisplay,
+          index: t.rotationIndex, conceded: 0, turns: 0
+        };
+      }
+      const col = cols[t.rotationKey];
+      if (col.index === null) col.index = t.rotationIndex;
+      col.conceded += t.conceded;
+      col.turns += 1;
+
+      const cellKey = t.slotKey + '|' + t.rotationKey;
+      if (!cells[cellKey]) cells[cellKey] = { conceded: 0, sideouts: 0, rallies: 0 };
+      cells[cellKey].conceded += t.conceded;
+      cells[cellKey].sideouts += t.sideouts;
+      cells[cellKey].rallies += t.rallies;
+    });
+
+    const rowList = Object.keys(rows).map(k => rows[k])
+      .sort((a, b) => b.points - a.points || a.label.localeCompare(b.label));
+    const colList = Object.keys(cols).map(k => cols[k])
+      .sort((a, b) => (a.index || 99) - (b.index || 99) || a.label.localeCompare(b.label));
+
+    return { turns: turns, rows: rowList, cols: colList, cells: cells };
+  }
+
+  function columnName(col) {
+    return col.index ? ('R' + col.index + ' (' + col.label + ')') : col.label;
+  }
+
+  // Counts, stated plainly. Held back until there is enough to state.
+  function gridReads(grid) {
+    const reads = [];
+
+    const busiest = grid.rows.filter(r => r.turns >= 2)
+      .sort((a, b) => b.points - a.points)[0];
+    if (busiest) {
+      const hit = Object.keys(busiest.rotations);
+      let against = '';
+      if (hit.length === 1) {
+        const col = grid.cols.filter(c => c.key === hit[0])[0];
+        const name = col ? columnName(col) : hit[0];
+        against = busiest.turns === 2 ? `, both against ${name}` : `, all ${busiest.turns} against ${name}`;
+      } else {
+        against = `, across ${hit.length} of our rotations`;
+      }
+      reads.push(`Their ${busiest.label}: ${busiest.points} points on ` +
+        `${busiest.turns} service turns${against}.`);
+    }
+
+    const received = grid.cols.filter(c => c.turns > 0);
+    if (received.length >= 2) {
+      const worst = received.slice().sort((a, b) => b.conceded - a.conceded)[0];
+      const tied = received.filter(c => c.conceded === worst.conceded).length > 1;
+      reads.push(`${columnName(worst)}: ${worst.conceded} points conceded on ` +
+        `${worst.turns} receive turns${tied ? '' : ', most of any rotation'}.`);
+    }
+
+    return reads;
+  }
+
+  // --------- Post-match review ---------
+
+  // Straight off the records: the chance as it stood at each five-point mark,
+  // so the number can be judged after the fact rather than during.
+  function reviewMarksForSet(setNumber) {
+    const log = rallyLog().filter(r => r.set === setNumber);
+    if (!log.length) return null;
+    const marks = [];
+    const seen = {};
+    log.forEach((r, i) => {
+      const combined = r.ourScore + r.theirScore;
+      const isLast = i === log.length - 1;
+      if (i === 0 || combined % 5 === 0 || isLast) {
+        const key = r.ourScore + '-' + r.theirScore;
+        if (seen[key]) return;
+        seen[key] = true;
+        marks.push({
+          score: key,
+          pWin: typeof r.pWin === 'number' ? r.pWin : null,
+          final: isLast
+        });
+      }
+    });
+    return { set: setNumber, marks: marks };
+  }
+
+  function reviewSets() {
+    const sets = [];
+    rallyLog().forEach(r => { if (sets.indexOf(r.set) === -1) sets.push(r.set); });
+    return sets.sort((a, b) => a - b).map(reviewMarksForSet).filter(Boolean);
+  }
+
+  // --------- Optional: hand the grid to the opponent library ---------
+  // The opponent library is a separate change. When it is on the page it
+  // files one record per set; this adds the grid to that record. Wrapping its
+  // function rather than editing it keeps the two changes independent and
+  // mergeable in either order, and when it is absent none of this runs.
+
+  function gridRecordForSet(setNumber) {
+    const byCell = {};
+    serviceTurns().filter(t => t.set === setNumber).forEach(t => {
+      // Keys are a slot index and a jersey or internal id. Never a name.
+      const key = t.slotKey + '|' + t.rotationKey;
+      if (!byCell[key]) byCell[key] = { conceded: 0, sideouts: 0, rallies: 0, turns: 0 };
+      byCell[key].conceded += t.conceded;
+      byCell[key].sideouts += t.sideouts;
+      byCell[key].rallies += t.rallies;
+      byCell[key].turns += 1;
+    });
+    return byCell;
+  }
+
+  function attachGridToOpponentRecord(setNumber) {
+    if (typeof getOpponentLibrary !== 'function' || typeof setOpponentLibrary !== 'function') return;
+    const opponent = state.opponent;
+    if (!opponent || !opponent.name) return;
+    const grid = gridRecordForSet(setNumber);
+    if (!Object.keys(grid).length) return;
+
+    const library = getOpponentLibrary();
+    const entry = library[opponent.name];
+    if (!entry || !Array.isArray(entry.sets)) return;
+    for (let i = entry.sets.length - 1; i >= 0; i--) {
+      if (entry.sets[i] && entry.sets[i].setNumber === setNumber) {
+        entry.sets[i].grid = grid;
+        setOpponentLibrary(library);
+        return;
+      }
+    }
+  }
+
+  function integrateWithOpponentLibrary() {
+    if (typeof recordCurrentOpponentSet !== 'function') return;
+    if (recordCurrentOpponentSet.gridWrapped) return;
+    const original = recordCurrentOpponentSet;
+    const wrapped = function () {
+      const setNumber = state.setNumber;
+      const wrote = original.apply(null, arguments);
+      if (wrote) attachGridToOpponentRecord(setNumber);
+      return wrote;
+    };
+    wrapped.gridWrapped = true;
+    try {
+      recordCurrentOpponentSet = wrapped;
+    } catch (e) {
+      // If the binding cannot be replaced the grid simply is not filed.
+    }
+  }
+
+  function renderGridPanel() {
+    const panel = document.getElementById('grid-panel');
+    panel.hidden = !gridPanelOpen;
+    panel.innerHTML = '';
+    if (!gridPanelOpen) return;
+
+    const grid = buildServerGrid();
+    if (!grid.turns.length) {
+      const empty = document.createElement('div');
+      empty.className = 'small-label';
+      empty.textContent = 'No receiving rallies logged yet.';
+      panel.appendChild(empty);
+      return;
+    }
+
+    gridReads(grid).forEach(text => {
+      const line = document.createElement('div');
+      line.className = 'grid-read';
+      line.textContent = text;
+      panel.appendChild(line);
+    });
+
+    const table = document.createElement('table');
+    table.className = 'grid';
+
+    const head = document.createElement('tr');
+    const corner = document.createElement('th');
+    corner.textContent = 'conceded / sideouts';
+    head.appendChild(corner);
+    grid.cols.forEach(col => {
+      const th = document.createElement('th');
+      th.textContent = columnName(col);
+      head.appendChild(th);
+    });
+    const rowTotalHead = document.createElement('th');
+    rowTotalHead.textContent = 'turns';
+    head.appendChild(rowTotalHead);
+    table.appendChild(head);
+
+    grid.rows.forEach(row => {
+      const tr = document.createElement('tr');
+      const th = document.createElement('th');
+      th.textContent = row.label;
+      tr.appendChild(th);
+      grid.cols.forEach(col => {
+        const td = document.createElement('td');
+        const cell = grid.cells[row.key + '|' + col.key];
+        if (cell) {
+          td.textContent = cell.conceded + ' / ' + cell.sideouts;
+          td.title = cell.rallies + ' receive rallies';
+        } else {
+          td.className = 'empty';
+          td.textContent = '–';
+        }
+        tr.appendChild(td);
+      });
+      const turnsCell = document.createElement('td');
+      turnsCell.textContent = row.points + ' on ' + row.turns;
+      tr.appendChild(turnsCell);
+      table.appendChild(tr);
+    });
+
+    const foot = document.createElement('tr');
+    const footLabel = document.createElement('th');
+    footLabel.textContent = 'receive turns';
+    foot.appendChild(footLabel);
+    grid.cols.forEach(col => {
+      const td = document.createElement('td');
+      td.textContent = col.conceded + ' on ' + col.turns;
+      foot.appendChild(td);
+    });
+    foot.appendChild(document.createElement('td'));
+    table.appendChild(foot);
+
+    panel.appendChild(table);
+  }
+
+  function renderReviewPanel() {
+    const panel = document.getElementById('review-panel');
+    panel.hidden = !reviewPanelOpen;
+    panel.innerHTML = '';
+    if (!reviewPanelOpen) return;
+
+    const sets = reviewSets();
+    if (!sets.length) {
+      const empty = document.createElement('div');
+      empty.className = 'small-label';
+      empty.textContent = 'No rallies logged yet.';
+      panel.appendChild(empty);
+      return;
+    }
+
+    sets.forEach(entry => {
+      const line = document.createElement('div');
+      line.className = 'review-set';
+      const parts = entry.marks.map(m => m.final
+        ? ('final ' + m.score)
+        : (m.score + ' ' + (m.pWin === null ? '--' : Math.round(m.pWin * 100) + '%')));
+      line.textContent = `Set ${entry.set}: ` + parts.join(' · ');
+      panel.appendChild(line);
+    });
+
+    const shares = playingTimeShares();
+    const rallies = rallyLog().length;
+    const header = document.createElement('div');
+    header.className = 'small-label review-players';
+    header.textContent = `Points on court, of ${rallies} rallies this match:`;
+    panel.appendChild(header);
+
+    shares.forEach(s => {
+      const line = document.createElement('div');
+      line.className = 'review-player';
+      const who = s.jersey ? ('#' + s.jersey + ' ' + s.name) : s.name;
+      line.textContent = `${who}: ${s.points} (${Math.round(s.share * 100)}%)`;
+      panel.appendChild(line);
+    });
+  }
+
+  // The exact playing-time share, straight from the log.
+  function playingTimeShares() {
+    const totals = pointsOnCourtFromLog();
+    const rallies = rallyLog().length;
+    return state.players.map(p => ({
+      id: p.id,
+      name: p.name,
+      jersey: p.jersey || null,
+      points: totals[p.id] || 0,
+      share: rallies ? (totals[p.id] || 0) / rallies : 0
+    })).sort((a, b) => b.points - a.points);
+  }
+
+  function getPlayerById(id) {
+    return state.players.find(p => p.id === id) || null;
+  }
+
+  function getPlayerName(id) {
+    const p = getPlayerById(id);
+    return p ? p.name : '';
+  }
+
+  function incrementPointsForOnCourtPlayers() {
+    state.rotation.forEach(id => {
+      if (!id) return;
+      const p = getPlayerById(id);
+      if (p) p.points += 1;
+    });
+  }
+
+  // rotation index 0..5 => positions 1..6
+  function getPlayerIdAtPosition(posNumber) {
+    const idx = posNumber - 1;
+    return state.rotation[idx];
+  }
+
+  // --------- Actions ---------
+
+  function loadLineupFromTextarea() {
+    const text = document.getElementById('lineup-input').value;
+    const rawLines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+
+    if (rawLines.length === 0) {
+      alert("Please enter at least one player name.");
+      return;
+    }
+
+    pushHistory();
+
+    const oldPlayersByName = {};
+    state.players.forEach(p => {
+      oldPlayersByName[p.name] = p;
+    });
+
+    const newPlayers = [];
+    let nextId = 1;
+
+    for (const line of rawLines) {
+      const parsed = parseLineupLine(line);
+      const name = parsed.name;
+      let existing = oldPlayersByName[name];
+      if (!existing) {
+        existing = { id: nextId, name: name, points: 0, jersey: parsed.jersey };
+      } else {
+        existing = {
+          id: nextId,
+          name: existing.name,
+          points: existing.points,
+          // a number typed this time wins; otherwise keep what was there
+          jersey: parsed.jersey || existing.jersey || null
+        };
+      }
+      newPlayers.push(existing);
+      nextId += 1;
+    }
+
+    state.players = newPlayers;
+    state.nextPlayerId = nextId;
+
+    const ids = newPlayers.map(p => p.id);
+    // First six are positions 1..6
+    state.rotation = ids.slice(0, 6);
+    state.bench = ids.slice(6);
+
+    state.pendingSub = null;
+
+    render();
+  }
+
+  // Volleyball rotation: 1 -> 6 -> 5 -> 4 -> 3 -> 2 -> 1
+  // Internally rotation[0] = pos1, ..., rotation[5] = pos6
+
+  // "Forward" = real volleyball rotation (1 to 6)
+  function rotateForward() {
+    if (state.rotation.length < 2) return;
+    pushHistory();
+    // Left-rotate: [p1,p2,p3,p4,p5,p6] -> [p2,p3,p4,p5,p6,p1]
+    const first = state.rotation[0];
+    state.rotation = state.rotation.slice(1).concat([first]);
+    render();
+  }
+
+  // "Backward" = reverse of that rotation (6 back to 1)
+  function rotateBackward() {
+    if (state.rotation.length < 2) return;
+    pushHistory();
+    // Right-rotate: [p1,p2,p3,p4,p5,p6] -> [p6,p1,p2,p3,p4,p5]
+    const last = state.rotation[state.rotation.length - 1];
+    state.rotation = [last].concat(state.rotation.slice(0, state.rotation.length - 1));
+    render();
+  }
+
+  function scorePoint(team) {
+    pushHistory();
+    // Before any mutation: who was serving, who was on court, which of their
+    // slots was up. None of that is recoverable afterwards.
+    recordRally(team);
+
+    if (team === 'us') {
+      if (state.serving === 'them') {
+        // sideout: they served, we win rally -> we get serve & rotate (1 -> 6)
+        state.serving = 'us';
+        if (state.rotation.length >= 2) {
+          const first = state.rotation[0];
+          state.rotation = state.rotation.slice(1).concat([first]);
+        }
+      }
+      state.ourScore += 1;
+    } else {
+      if (state.serving === 'us') {
+        // we served, lost rally -> they get serve, no rotation for us
+        state.serving = 'them';
+      }
+      state.theirScore += 1;
+    }
+
+    incrementPointsForOnCourtPlayers();
+    render();
+  }
+
+  function toggleServing() {
+    pushHistory();
+    state.serving = (state.serving === 'us') ? 'them' : 'us';
+    render();
+  }
+
+  function toggleSubMode() {
+    pushHistory();
+    state.subMode = !state.subMode;
+    state.pendingSub = null;
+    render();
+  }
+
+  function handlePlayerClick(group, playerId) {
+    if (!state.subMode) return;
+
+    const pending = state.pendingSub;
+    if (!pending) {
+      state.pendingSub = { group, playerId };
+      render();
+      return;
+    }
+
+    if (pending.playerId === playerId || pending.group === group) {
+      state.pendingSub = null;
+      render();
+      return;
+    }
+
+    let courtId, benchId;
+    if (group === 'court') {
+      courtId = playerId;
+      benchId = pending.playerId;
+    } else {
+      courtId = pending.playerId;
+      benchId = playerId;
+    }
+
+    if (!state.rotation.includes(courtId) || !state.bench.includes(benchId)) {
+      state.pendingSub = null;
+      render();
+      return;
+    }
+
+    pushHistory();
+
+    state.rotation = state.rotation.map(id => id === courtId ? benchId : id);
+    state.bench = state.bench.map(id => id === benchId ? courtId : id);
+
+    // Log substitution in game log (newest first)
+    state.substitutions.unshift({
+      kind: 'sub',
+      inId: benchId,
+      outId: courtId,
+      setNumber: state.setNumber,
+      score: state.ourScore + "-" + state.theirScore
+    });
+
+    state.pendingSub = null;
+    render();
+  }
+
+  function newSet() {
+    pushHistory();
+
+    // Log final score of the set we're ending
+    state.substitutions.unshift({
+      kind: 'setEnd',
+      setNumber: state.setNumber,
+      score: state.ourScore + "-" + state.theirScore
+    });
+
+    // Advance to next set and reset scores
+    state.setNumber += 1;
+    state.ourScore = 0;
+    state.theirScore = 0;
+    state.serving = 'us';
+    state.pendingSub = null;
+    render();
+  }
+
+  function resetApp() {
+    if (!confirm("Reset app? This will clear scores, sets, points, lineup, and substitutions. Saved games will be retained and can be manually deleted.")) {
+      return;
+    }
+    try {
+      localStorage.removeItem(STORAGE_KEY_AUTO);
+    } catch (e) {}
+    state = createInitialState();
+    historyStack = [];
+    render();
+  }
+
+  function undoLast() {
+    if (historyStack.length === 0) return;
+    const snapshot = historyStack.pop();
+    restoreState(snapshot);
+  }
+
+  // --------- Saved games actions ---------
+
+  function saveCurrentGameAsSnapshot() {
+    const name = prompt("Name this game (e.g., 'vs Panthers Set 2'):");
+    if (!name) return;
+    const saves = getSavedGames();
+    const now = Date.now();
+    const entry = {
+      id: now,
+      name: name,
+      timestamp: now,
+      state: cloneState(state)
+    };
+    saves.push(entry);
+    setSavedGames(saves);
+    refreshSavedGamesDropdown();
+  }
+
+  function loadSelectedSavedGame() {
+    const sel = document.getElementById('saved-games-select');
+    if (!sel) return;
+    const idStr = sel.value;
+    if (!idStr) return;
+
+    const saves = getSavedGames();
+    const entry = saves.find(e => String(e.id) === idStr);
+    if (!entry) return;
+
+    if (!confirm(`Load "${entry.name}"? Current game state will be replaced.`)) {
+      return;
+    }
+
+    pushHistory();
+    state = cloneState(entry.state);
+    render();
+  }
+
+  function deleteSelectedSavedGame() {
+    const sel = document.getElementById('saved-games-select');
+    if (!sel) return;
+    const idStr = sel.value;
+    if (!idStr) return;
+
+    const saves = getSavedGames();
+    const entry = saves.find(e => String(e.id) === idStr);
+    if (!entry) return;
+
+    if (!confirm(`Delete saved game "${entry.name}"? This cannot be undone.`)) {
+      return;
+    }
+
+    const remaining = saves.filter(e => String(e.id) !== idStr);
+    setSavedGames(remaining);
+    refreshSavedGamesDropdown();
+  }
+
+  // --------- Rendering ---------
+
+  function render() {
+    document.getElementById('our-score').textContent = state.ourScore;
+    document.getElementById('their-score').textContent = state.theirScore;
+    document.getElementById('set-number').textContent = state.setNumber;
+
+    const servingElem = document.getElementById('serving-indicator');
+    servingElem.textContent = state.serving === 'us' ? 'Us' : 'Them';
+    servingElem.classList.toggle('serving-us', state.serving === 'us');
+    servingElem.classList.toggle('serving-them', state.serving === 'them');
+
+    const subBtn = document.getElementById('sub-mode-btn');
+    if (state.subMode) {
+      subBtn.textContent = "Sub Mode: On";
+      subBtn.classList.add('toggle-on');
+    } else {
+      subBtn.textContent = "Sub Mode: Off";
+      subBtn.classList.remove('toggle-on');
+    }
+
+    updateUndoButton();
+
+    // Court: position layout [4,3,2,5,6,1] = top-left -> bottom-right
+    const positionOrder = [4, 3, 2, 5, 6, 1];
+    const court = document.getElementById('court');
+    court.innerHTML = '';
+    const pending = state.pendingSub;
+
+    for (let i = 0; i < 6; i++) {
+      const posNumber = positionOrder[i];
+      const cell = document.createElement('div');
+      cell.className = 'court-cell';
+
+      const label = document.createElement('div');
+      label.className = 'pos-label';
+      label.textContent = "Pos " + posNumber;
+      cell.appendChild(label);
+
+      const playerId = getPlayerIdAtPosition(posNumber);
+      if (!playerId) {
+        const emptyDiv = document.createElement('div');
+        emptyDiv.className = 'player-card empty';
+        emptyDiv.textContent = 'Empty';
+        cell.appendChild(emptyDiv);
+      } else {
+        const player = getPlayerById(playerId);
+        const card = document.createElement('div');
+        card.className = 'player-card';
+        card.dataset.playerId = playerId;
+        card.dataset.group = 'court';
+
+        if (pending && pending.group === 'court' && pending.playerId === playerId) {
+          card.classList.add('sub-pending');
+        }
+
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'player-name';
+        nameDiv.textContent = player.name;
+
+        const metaDiv = document.createElement('div');
+        metaDiv.className = 'player-meta';
+        metaDiv.textContent = "Pts: " + player.points;
+
+        card.appendChild(nameDiv);
+        card.appendChild(metaDiv);
+
+        card.addEventListener('click', () => handlePlayerClick('court', playerId));
+
+        cell.appendChild(card);
+      }
+
+      court.appendChild(cell);
+    }
+
+    // Bench
+    const benchList = document.getElementById('bench-list');
+    benchList.innerHTML = '';
+
+    state.bench.forEach(id => {
+      const player = getPlayerById(id);
+      if (!player) return;
+      const card = document.createElement('div');
+      card.className = 'player-card';
+      card.dataset.playerId = id;
+      card.dataset.group = 'bench';
+
+      if (pending && pending.group === 'bench' && pending.playerId === id) {
+        card.classList.add('sub-pending');
+      }
+
+      const nameDiv = document.createElement('div');
+      nameDiv.className = 'player-name';
+      nameDiv.textContent = player.name;
+
+      const metaDiv = document.createElement('div');
+      metaDiv.className = 'player-meta';
+      metaDiv.textContent = "Pts: " + player.points;
+
+      card.appendChild(nameDiv);
+      card.appendChild(metaDiv);
+
+      card.addEventListener('click', () => handlePlayerClick('bench', id));
+
+      benchList.appendChild(card);
+    });
+
+    // Game log (subs + set ends)
+    const subsLog = document.getElementById('subs-log-list');
+    subsLog.innerHTML = '';
+    state.substitutions.forEach(entry => {
+      const div = document.createElement('div');
+      div.className = 'sub-entry';
+
+      if (entry.kind === 'setEnd') {
+        div.textContent = `End Set ${entry.setNumber}: ${entry.score}`;
+      } else {
+        // substitution (backward compatible with older saves)
+        const inName = getPlayerName(entry.inId);
+        const outName = getPlayerName(entry.outId);
+        div.textContent = `Set ${entry.setNumber} @ ${entry.score}: ${inName} in for ${outName}`;
+      }
+
+      subsLog.appendChild(div);
+    });
+
+    // Save current state automatically & refresh saved list UI
+    saveAutoState();
+    refreshSavedGamesDropdown();
+    renderRallyExtras();
+  }
+
+  // The clock ticks on its own between points, so it is split out and can be
+  // refreshed without touching the rest of the screen or saving anything.
+  function renderClock() {
+    const readout = document.getElementById('clock-readout');
+    if (!readout) return;
+    const log = rallyLog();
+    if (!log.length) { readout.textContent = ''; return; }
+    const now = Date.now();
+    const setStart = firstRallyTimeInSet(state.setNumber);
+    const matchStart = firstRallyTimeInMatch();
+    const setPart = setStart === null ? '0:00' : formatClock(now - setStart);
+    readout.textContent = `Set ${setPart} · Match ${formatClock(now - matchStart)}`;
+  }
+
+  function renderRallyExtras() {
+    renderClock();
+
+    const tap = document.getElementById('serve-miss-tap');
+    const available = serveMissAvailable();
+    tap.hidden = !available;
+    tap.classList.toggle('flagged', available && !!lastRally().serveMiss);
+
+    const toggle = document.getElementById('chance-toggle-btn');
+    toggle.textContent = state.showSetChance ? 'Set chance: On' : 'Set chance: Off';
+    toggle.classList.toggle('toggle-on', !!state.showSetChance);
+
+    // Computed on every point regardless; shown only when asked for.
+    const chance = document.getElementById('set-chance');
+    const played = state.ourScore + state.theirScore;
+    if (!state.showSetChance) {
+      chance.hidden = true;
+      chance.textContent = '';
+    } else {
+      chance.hidden = false;
+      const pct = Math.round(setChance(state.ourScore, state.theirScore) * 100);
+      chance.textContent = `Set chance ${pct}% (${chanceLabel(played)})`;
+    }
+
+    renderGridPanel();
+    renderReviewPanel();
+  }
+
+  // --------- Event wiring ---------
+
+  document.addEventListener('DOMContentLoaded', () => {
+    // Try to restore previous automatic state first
+    loadAutoStateIfAny();
+
+    document.getElementById('load-lineup-btn').addEventListener('click', loadLineupFromTextarea);
+    document.getElementById('serve-miss-tap').addEventListener('click', toggleServeMiss);
+    document.getElementById('grid-toggle-btn').addEventListener('click', () => {
+      gridPanelOpen = !gridPanelOpen;
+      render();
+    });
+    document.getElementById('review-toggle-btn').addEventListener('click', () => {
+      reviewPanelOpen = !reviewPanelOpen;
+      render();
+    });
+    integrateWithOpponentLibrary();
+    document.getElementById('chance-toggle-btn').addEventListener('click', toggleSetChance);
+    document.getElementById('export-rallies-btn').addEventListener('click', exportRallyLog);
+    // The set clock is wall-clock, so it moves without any state change.
+    setInterval(renderClock, 1000);
+    document.getElementById('rotate-forward-btn').addEventListener('click', rotateForward);
+    document.getElementById('rotate-back-btn').addEventListener('click', rotateBackward);
+    document.getElementById('score-us-btn').addEventListener('click', () => scorePoint('us'));
+    document.getElementById('score-them-btn').addEventListener('click', () => scorePoint('them'));
+    document.getElementById('serving-indicator').addEventListener('click', toggleServing);
+    document.getElementById('sub-mode-btn').addEventListener('click', toggleSubMode);
+    document.getElementById('new-set-btn').addEventListener('click', newSet);
+    document.getElementById('reset-btn').addEventListener('click', resetApp);
+    document.getElementById('undo-btn').addEventListener('click', undoLast);
+
+    document.getElementById('save-game-btn').addEventListener('click', saveCurrentGameAsSnapshot);
+    document.getElementById('load-game-btn').addEventListener('click', loadSelectedSavedGame);
+    document.getElementById('delete-game-btn').addEventListener('click', deleteSelectedSavedGame);
+
+    render();
+  });
+</script>
+</body>
+</html>

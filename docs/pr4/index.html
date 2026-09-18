@@ -1,0 +1,1100 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>Volleyball Lineup Tracker</title>
+      <meta name="viewport"
+            content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+      <!-- iOS home-screen app settings -->
+      <meta name="apple-mobile-web-app-capable" content="yes">
+      <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+      <meta name="apple-mobile-web-app-title" content="Lineup">
+
+      <!-- App icon (add this file to your repo) -->
+      <link rel="apple-touch-icon" href="vb-icon192.png">
+      <style>
+    * {
+      box-sizing: border-box;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      margin: 0;
+      padding: 0.5rem;
+      background: #111;
+      color: #f5f5f5;
+      touch-action: manipulation;
+    }
+
+    h1 {
+      font-size: 1.3rem;
+      margin: 0.5rem 0;
+      text-align: center;
+    }
+
+    .app {
+      max-width: 900px;
+      margin: 0 auto;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 0.5rem;
+      background: #1b1b1b;
+    }
+
+    section {
+      margin-bottom: 0.6rem;
+    }
+
+    #import-area {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    #lineup-input {
+      width: 100%;
+      min-height: 70px;
+      background: #111;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 0.4rem;
+      font-size: 0.8rem;
+    }
+
+    button {
+      padding: 0.3rem 0.6rem;
+      margin: 0.1rem;
+      border-radius: 4px;
+      border: 1px solid #555;
+      background: #2a2a2a;
+      color: #f5f5f5;
+      font-size: 0.8rem;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+    }
+
+    button.primary {
+      background: #2b7cff;
+      border-color: #2b7cff;
+      color: #fff;
+    }
+
+    button.danger {
+      background: #b00020;
+      border-color: #b00020;
+      color: #fff;
+    }
+
+    button.toggle-on {
+      background: #0e8a3a;
+      border-color: #0e8a3a;
+    }
+
+    .status-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 0.3rem 0.4rem;
+    }
+
+    .score {
+      font-size: 1.6rem;
+      font-weight: 700;
+      display: flex;
+      gap: 0.6rem;
+      align-items: baseline;
+    }
+
+    .score span span {
+      font-size: 1.8rem;
+    }
+
+    .controls-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      justify-content: center;
+      margin-top: 0.3rem;
+    }
+
+    .controls-row button {
+      font-size: 0.95rem;
+      padding: 0.45rem 0.9rem;
+    }
+
+    .big-score {
+      font-size: 1.15rem;
+      padding: 0.55rem 1.1rem;
+      font-weight: 600;
+    }
+
+    .layout {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .panel {
+      flex: 1 1 200px;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 0.4rem;
+      min-height: 120px;
+    }
+
+    .panel h2 {
+      font-size: 0.9rem;
+      margin: 0 0 0.3rem 0;
+    }
+
+    #court {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      /* Grows rather than clipping: the meta line now carries the target and
+         a marker, and long names wrap. */
+      grid-auto-rows: minmax(72px, auto);
+      gap: 0.25rem;
+    }
+
+    .court-cell {
+      border-radius: 6px;
+      border: 1px solid #444;
+      background: #18232e;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      padding: 0.2rem;
+      font-size: 0.7rem;
+      text-align: center;
+    }
+
+    .court-cell.empty {
+      opacity: 0.5;
+      font-style: italic;
+    }
+
+    .pos-label {
+      font-size: 0.7rem;
+      opacity: 0.8;
+      text-align: left;
+      margin-bottom: 0.1rem;
+    }
+
+    .player-card {
+      width: 100%;
+      border-radius: 6px;
+      padding: 0.25rem;
+      border: 1px solid #555;
+      background: #222;
+      cursor: pointer;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .player-name {
+      font-size: 1.0rem;
+      font-weight: 600;
+      margin-bottom: 0.1rem;
+    }
+
+    .player-meta {
+      font-size: 0.75rem;
+      opacity: 0.85;
+      line-height: 1.25;
+    }
+
+    #bench-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .sub-pending {
+      border: 2px solid #f4d03f !important;
+      box-shadow: 0 0 4px #f4d03f;
+    }
+
+    .not-in-yet {
+      font-size: 0.7rem;
+      color: #c9a227;
+      margin-top: 0.1rem;
+    }
+
+    /* Own line: court cells are only about 60px wide, so an inline marker
+       wraps mid-number and spills out of the cell. */
+    .target-met {
+      display: block;
+      color: #c9a227;
+    }
+
+    #bench-participation {
+      margin-top: 0.3rem;
+    }
+
+    .target-row {
+      display: flex;
+      align-items: center;
+      margin-top: 0.4rem;
+    }
+
+    #target-input {
+      width: 3.5rem;
+      margin-left: 0.3rem;
+      background: #111;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 0.15rem 0.25rem;
+      font-size: 0.8rem;
+    }
+
+    .target-help {
+      margin-top: 0.15rem;
+    }
+
+    #subs-log-list {
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: 0.8rem;
+    }
+
+    .sub-entry {
+      padding: 0.2rem 0;
+      border-bottom: 1px solid #333;
+    }
+
+    .small-label {
+      font-size: 0.7rem;
+      opacity: 0.7;
+    }
+
+    .serving-indicator {
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      border: 1px solid #555;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    .serving-us {
+      background: #0e8a3a;
+    }
+
+    .serving-them {
+      background: #8a4b0e;
+    }
+
+    .saved-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .saved-controls select {
+      font-size: 0.8rem;
+      max-width: 180px;
+    }
+
+    .saved-controls button {
+      font-size: 0.85rem;
+      padding: 0.35rem 0.8rem;
+    }
+
+    .bottom-section {
+      margin-top: 0.4rem;
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <h1>Volleyball Lineup Tracker</h1>
+
+  <!-- Lineup Import -->
+  <section id="import-area">
+    <label for="lineup-input" class="small-label">
+      Lineup (one name per line in serving order) then bench (any order).
+    </label>
+    <textarea id="lineup-input" placeholder="e.g.
+Setter
+Middle 1
+Outside 1
+Opposite
+Middle 2
+Outside 2
+DS 1
+DS 2"></textarea>
+    <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
+      <button id="load-lineup-btn" class="primary">Load / Update<br>Lineup</button>
+
+      <!-- Rotation buttons moved here -->
+      <div>
+          <span class="small-label">Rotate</span>
+          
+          <button id="rotate-back-btn">◀︎</button>
+          <button id="rotate-forward-btn">▶︎</button>
+        <span class="small-label">Serving:</span>
+        <span id="serving-indicator" class="serving-indicator serving-us">Us</span>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- Status & Controls -->
+  <section>
+    <div class="status-row">
+      <div>Set: <span id="set-number">1</span></div>
+      <div class="score">
+        <span>Us: <span id="our-score">0</span></span>
+        <span>Them: <span id="their-score">0</span></span>
+      </div>
+      
+    </div>
+
+    <div class="controls-row">
+
+      <button id="score-us-btn" class="primary big-score">Us +1</button>
+      <button id="score-them-btn" class="primary big-score">Them +1</button>
+
+      <button id="undo-btn">Undo</button>
+      <button id="new-set-btn">New Set</button>
+
+      <button id="sub-mode-btn">Sub Mode: Off</button>
+    </div>
+  </section>
+
+  <!-- Layout: Court / Bench / Game Log -->
+  <section class="layout">
+    <div class="panel">
+      <h2>Court</h2>
+      <div id="court"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Bench</h2>
+      <div id="bench-list"></div>
+      <div id="bench-participation" class="small-label"></div>
+      <div class="target-row small-label">
+        <label for="target-input">25% target</label>
+        <input id="target-input" type="number" min="0" step="1" value="38">
+      </div>
+      <div class="small-label target-help">
+        38 clears 25% of a 3-set match that goes 26-24 every set.
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Game Log</h2>
+      <div id="subs-log-list"></div>
+    </div>
+  </section>
+
+  <!-- Saved games + Reset (bottom of view) -->
+  <section class="bottom-section">
+    <div class="status-row">
+      <div class="small-label">Game Management (this device only)</div>
+      <div class="saved-controls">
+        <button id="save-game-btn">Save Game</button>
+        <select id="saved-games-select"></select>
+        <button id="load-game-btn">Load</button>
+        <button id="delete-game-btn">Delete</button>
+        <button id="reset-btn" class="danger">Reset App</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  // --------- Storage keys ---------
+  const STORAGE_KEY_AUTO = 'vb_lineup_auto_state_v1';
+  const STORAGE_KEY_SAVES = 'vb_lineup_saved_states_v1';
+
+  // Rally-points on court that clear the 25%-of-match playing requirement.
+  // A hard-fought 3-set match is about 150 rallies (three sets at 26-24);
+  // 25% of that is 37.5, so 38 clears the requirement for any match up to
+  // that length. It is a deliberate ceiling, and the coach can change it.
+  const DEFAULT_PLAYING_TIME_TARGET = 38;
+
+  // --------- State management ---------
+
+  function createInitialState() {
+    return {
+      players: [],          // [{id, name, points}]
+      rotation: [],         // [playerId at pos1, pos2, ..., pos6]
+      bench: [],            // [playerId,...]
+      setParticipants: [],  // [playerId,...] everyone who has been on court this set
+      playingTimeTarget: DEFAULT_PLAYING_TIME_TARGET, // rally-points that clear 25%
+      ourScore: 0,
+      theirScore: 0,
+      serving: 'us',        // 'us' | 'them'
+      setNumber: 1,
+      subMode: false,
+      pendingSub: null,     // {group: 'court'|'bench', playerId}
+      substitutions: [],    // game log: subs + set-end entries
+      nextPlayerId: 1
+    };
+  }
+
+  let state = createInitialState();
+  let historyStack = [];
+
+  function cloneState(s) {
+    return JSON.parse(JSON.stringify(s));
+  }
+
+  function pushHistory() {
+    historyStack.push(cloneState(state));
+    updateUndoButton();
+  }
+
+  function restoreState(snapshot) {
+    state = snapshot;
+    render();
+  }
+
+  function updateUndoButton() {
+    const undoBtn = document.getElementById('undo-btn');
+    undoBtn.disabled = historyStack.length === 0;
+  }
+
+  // --------- Local storage helpers ---------
+
+  function saveAutoState() {
+    try {
+      localStorage.setItem(STORAGE_KEY_AUTO, JSON.stringify(state));
+    } catch (e) {
+      // ignore storage errors
+    }
+  }
+
+  function loadAutoStateIfAny() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_AUTO);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          state = parsed;
+        }
+      }
+    } catch (e) {
+      state = createInitialState();
+    }
+  }
+
+  function getSavedGames() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_SAVES);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function setSavedGames(list) {
+    try {
+      localStorage.setItem(STORAGE_KEY_SAVES, JSON.stringify(list));
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  function refreshSavedGamesDropdown() {
+    const sel = document.getElementById('saved-games-select');
+    const loadBtn = document.getElementById('load-game-btn');
+    const delBtn = document.getElementById('delete-game-btn');
+    if (!sel) return;
+
+    const saves = getSavedGames();
+    sel.innerHTML = '';
+
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = saves.length ? 'Select saved game…' : 'No saved games';
+    sel.appendChild(placeholder);
+
+    saves.forEach(entry => {
+      const opt = document.createElement('option');
+      opt.value = String(entry.id);
+      const dateStr = new Date(entry.timestamp).toLocaleString();
+      opt.textContent = `${entry.name} (${dateStr})`;
+      sel.appendChild(opt);
+    });
+
+    const hasSaves = saves.length > 0;
+    sel.disabled = !hasSaves;
+    loadBtn.disabled = !hasSaves;
+    delBtn.disabled = !hasSaves;
+  }
+
+  // --------- Helpers ---------
+
+  function getPlayerById(id) {
+    return state.players.find(p => p.id === id) || null;
+  }
+
+  function getPlayerName(id) {
+    const p = getPlayerById(id);
+    return p ? p.name : '';
+  }
+
+  function incrementPointsForOnCourtPlayers() {
+    state.rotation.forEach(id => {
+      if (!id) return;
+      const p = getPlayerById(id);
+      if (p) p.points += 1;
+    });
+  }
+
+  // --------- Set participation (CYC Rule 20.1) ---------
+
+  // setParticipants is everyone who has been on court at any point in the
+  // current set. Called at the top of render(), so it picks up subs and any
+  // other change that puts a new id in the rotation. Older saved states have
+  // no record of who has already played, so they default to the six on court.
+  function syncSetParticipants() {
+    if (!Array.isArray(state.setParticipants)) {
+      state.setParticipants = [];
+    }
+    state.rotation.forEach(id => {
+      if (id && state.setParticipants.indexOf(id) === -1) {
+        state.setParticipants.push(id);
+      }
+    });
+  }
+
+  function benchPlayersNotYetIn() {
+    const played = Array.isArray(state.setParticipants) ? state.setParticipants : [];
+    return state.bench.filter(id => id && played.indexOf(id) === -1);
+  }
+
+  // --------- 25% playing-time target ---------
+
+  // Saved states written before this existed have no target, so fall back to
+  // the default rather than showing "/ undefined".
+  function getPlayingTimeTarget() {
+    const t = state.playingTimeTarget;
+    if (typeof t === 'number' && isFinite(t) && t >= 0) return t;
+    return DEFAULT_PLAYING_TIME_TARGET;
+  }
+
+  function playersBelowTarget() {
+    const target = getPlayingTimeTarget();
+    return state.players.filter(p => p.points < target);
+  }
+
+  function setPlayingTimeTarget(raw) {
+    const parsed = parseInt(raw, 10);
+    if (isNaN(parsed) || parsed < 0) {
+      render();  // put the input back to the value actually in use
+      return;
+    }
+    if (parsed === getPlayingTimeTarget()) return;
+    pushHistory();
+    state.playingTimeTarget = parsed;
+    render();
+  }
+
+  // rotation index 0..5 => positions 1..6
+  function getPlayerIdAtPosition(posNumber) {
+    const idx = posNumber - 1;
+    return state.rotation[idx];
+  }
+
+  // --------- Actions ---------
+
+  function loadLineupFromTextarea() {
+    const text = document.getElementById('lineup-input').value;
+    const rawLines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+
+    if (rawLines.length === 0) {
+      alert("Please enter at least one player name.");
+      return;
+    }
+
+    pushHistory();
+
+    const oldPlayersByName = {};
+    state.players.forEach(p => {
+      oldPlayersByName[p.name] = p;
+    });
+
+    const newPlayers = [];
+    let nextId = 1;
+
+    for (const name of rawLines) {
+      let existing = oldPlayersByName[name];
+      if (!existing) {
+        existing = { id: nextId, name: name, points: 0 };
+      } else {
+        existing = { id: nextId, name: existing.name, points: existing.points };
+      }
+      newPlayers.push(existing);
+      nextId += 1;
+    }
+
+    state.players = newPlayers;
+    state.nextPlayerId = nextId;
+
+    const ids = newPlayers.map(p => p.id);
+    // First six are positions 1..6
+    state.rotation = ids.slice(0, 6);
+    state.bench = ids.slice(6);
+
+    // Player ids are reassigned here, so participation restarts from the
+    // six now on court. playingTimeTarget is deliberately left alone: this
+    // button is also how a coach fixes a typo or adds a late arrival
+    // mid-match, and silently resetting their target would surprise them.
+    state.setParticipants = state.rotation.slice();
+
+    state.pendingSub = null;
+
+    render();
+  }
+
+  // Volleyball rotation: 1 -> 6 -> 5 -> 4 -> 3 -> 2 -> 1
+  // Internally rotation[0] = pos1, ..., rotation[5] = pos6
+
+  // "Forward" = real volleyball rotation (1 to 6)
+  function rotateForward() {
+    if (state.rotation.length < 2) return;
+    pushHistory();
+    // Left-rotate: [p1,p2,p3,p4,p5,p6] -> [p2,p3,p4,p5,p6,p1]
+    const first = state.rotation[0];
+    state.rotation = state.rotation.slice(1).concat([first]);
+    render();
+  }
+
+  // "Backward" = reverse of that rotation (6 back to 1)
+  function rotateBackward() {
+    if (state.rotation.length < 2) return;
+    pushHistory();
+    // Right-rotate: [p1,p2,p3,p4,p5,p6] -> [p6,p1,p2,p3,p4,p5]
+    const last = state.rotation[state.rotation.length - 1];
+    state.rotation = [last].concat(state.rotation.slice(0, state.rotation.length - 1));
+    render();
+  }
+
+  function scorePoint(team) {
+    pushHistory();
+
+    if (team === 'us') {
+      if (state.serving === 'them') {
+        // sideout: they served, we win rally -> we get serve & rotate (1 -> 6)
+        state.serving = 'us';
+        if (state.rotation.length >= 2) {
+          const first = state.rotation[0];
+          state.rotation = state.rotation.slice(1).concat([first]);
+        }
+      }
+      state.ourScore += 1;
+    } else {
+      if (state.serving === 'us') {
+        // we served, lost rally -> they get serve, no rotation for us
+        state.serving = 'them';
+      }
+      state.theirScore += 1;
+    }
+
+    incrementPointsForOnCourtPlayers();
+    render();
+  }
+
+  function toggleServing() {
+    pushHistory();
+    state.serving = (state.serving === 'us') ? 'them' : 'us';
+    render();
+  }
+
+  function toggleSubMode() {
+    pushHistory();
+    state.subMode = !state.subMode;
+    state.pendingSub = null;
+    render();
+  }
+
+  function handlePlayerClick(group, playerId) {
+    if (!state.subMode) return;
+
+    const pending = state.pendingSub;
+    if (!pending) {
+      state.pendingSub = { group, playerId };
+      render();
+      return;
+    }
+
+    if (pending.playerId === playerId || pending.group === group) {
+      state.pendingSub = null;
+      render();
+      return;
+    }
+
+    let courtId, benchId;
+    if (group === 'court') {
+      courtId = playerId;
+      benchId = pending.playerId;
+    } else {
+      courtId = pending.playerId;
+      benchId = playerId;
+    }
+
+    if (!state.rotation.includes(courtId) || !state.bench.includes(benchId)) {
+      state.pendingSub = null;
+      render();
+      return;
+    }
+
+    pushHistory();
+
+    state.rotation = state.rotation.map(id => id === courtId ? benchId : id);
+    state.bench = state.bench.map(id => id === benchId ? courtId : id);
+
+    // Log substitution in game log (newest first)
+    state.substitutions.unshift({
+      kind: 'sub',
+      inId: benchId,
+      outId: courtId,
+      setNumber: state.setNumber,
+      score: state.ourScore + "-" + state.theirScore
+    });
+
+    state.pendingSub = null;
+    render();
+  }
+
+  function newSet() {
+    // Report what the rulebook cares about: who never entered this set, and
+    // who is short of the playing-time target. The coach decides; this never
+    // blocks ending the set.
+    const paragraphs = [];
+
+    const missing = benchPlayersNotYetIn();
+    if (missing.length > 0) {
+      const names = missing.map(getPlayerName).join(', ');
+      const plural = missing.length === 1 ? 'player who' : 'players who';
+      paragraphs.push(
+        `Set ${state.setNumber} ended with ${missing.length} ${plural} did not enter: ${names}.`
+      );
+      paragraphs.push(
+        `CYC Rule 20.1: all eligible bench players must participate in each set.`
+      );
+    }
+
+    const target = getPlayingTimeTarget();
+    const below = playersBelowTarget();
+    if (below.length > 0) {
+      const detail = below
+        .map(p => `${p.name} ${p.points} (needs ${target - p.points})`)
+        .join(', ');
+      paragraphs.push(`Below the 25% target (${target}): ${detail}.`);
+    }
+
+    if (paragraphs.length > 0) {
+      if (!confirm(paragraphs.join('\n\n') + '\n\nContinue to next set?')) {
+        return;
+      }
+    }
+
+    pushHistory();
+
+    // Log final score of the set we're ending
+    state.substitutions.unshift({
+      kind: 'setEnd',
+      setNumber: state.setNumber,
+      score: state.ourScore + "-" + state.theirScore
+    });
+
+    // Advance to next set and reset scores
+    state.setNumber += 1;
+    state.ourScore = 0;
+    state.theirScore = 0;
+    state.serving = 'us';
+    state.setParticipants = state.rotation.filter(id => id);
+    state.pendingSub = null;
+    render();
+  }
+
+  function resetApp() {
+    if (!confirm("Reset app? This will clear scores, sets, points, lineup, and substitutions. Saved games will be retained and can be manually deleted.")) {
+      return;
+    }
+    try {
+      localStorage.removeItem(STORAGE_KEY_AUTO);
+    } catch (e) {}
+    state = createInitialState();
+    historyStack = [];
+    render();
+  }
+
+  function undoLast() {
+    if (historyStack.length === 0) return;
+    const snapshot = historyStack.pop();
+    restoreState(snapshot);
+  }
+
+  // --------- Saved games actions ---------
+
+  function saveCurrentGameAsSnapshot() {
+    const name = prompt("Name this game (e.g., 'vs Panthers Set 2'):");
+    if (!name) return;
+    const saves = getSavedGames();
+    const now = Date.now();
+    const entry = {
+      id: now,
+      name: name,
+      timestamp: now,
+      state: cloneState(state)
+    };
+    saves.push(entry);
+    setSavedGames(saves);
+    refreshSavedGamesDropdown();
+  }
+
+  function loadSelectedSavedGame() {
+    const sel = document.getElementById('saved-games-select');
+    if (!sel) return;
+    const idStr = sel.value;
+    if (!idStr) return;
+
+    const saves = getSavedGames();
+    const entry = saves.find(e => String(e.id) === idStr);
+    if (!entry) return;
+
+    if (!confirm(`Load "${entry.name}"? Current game state will be replaced.`)) {
+      return;
+    }
+
+    pushHistory();
+    state = cloneState(entry.state);
+    render();
+  }
+
+  function deleteSelectedSavedGame() {
+    const sel = document.getElementById('saved-games-select');
+    if (!sel) return;
+    const idStr = sel.value;
+    if (!idStr) return;
+
+    const saves = getSavedGames();
+    const entry = saves.find(e => String(e.id) === idStr);
+    if (!entry) return;
+
+    if (!confirm(`Delete saved game "${entry.name}"? This cannot be undone.`)) {
+      return;
+    }
+
+    const remaining = saves.filter(e => String(e.id) !== idStr);
+    setSavedGames(remaining);
+    refreshSavedGamesDropdown();
+  }
+
+  // --------- Rendering ---------
+
+  // "Pts: 12 / 38", with a marker once the player has cleared the target.
+  function buildPlayerMeta(player) {
+    const target = getPlayingTimeTarget();
+    const metaDiv = document.createElement('div');
+    metaDiv.className = 'player-meta';
+    metaDiv.textContent = "Pts: " + player.points + "/" + target;
+    if (player.points >= target) {
+      const metSpan = document.createElement('span');
+      metSpan.className = 'target-met';
+      metSpan.textContent = '25% ✓';
+      metaDiv.appendChild(metSpan);
+    }
+    return metaDiv;
+  }
+
+  function render() {
+    syncSetParticipants();
+    // Normalize so legacy states persist a real target instead of nothing.
+    state.playingTimeTarget = getPlayingTimeTarget();
+    document.getElementById('target-input').value = state.playingTimeTarget;
+
+    document.getElementById('our-score').textContent = state.ourScore;
+    document.getElementById('their-score').textContent = state.theirScore;
+    document.getElementById('set-number').textContent = state.setNumber;
+
+    const servingElem = document.getElementById('serving-indicator');
+    servingElem.textContent = state.serving === 'us' ? 'Us' : 'Them';
+    servingElem.classList.toggle('serving-us', state.serving === 'us');
+    servingElem.classList.toggle('serving-them', state.serving === 'them');
+
+    const subBtn = document.getElementById('sub-mode-btn');
+    if (state.subMode) {
+      subBtn.textContent = "Sub Mode: On";
+      subBtn.classList.add('toggle-on');
+    } else {
+      subBtn.textContent = "Sub Mode: Off";
+      subBtn.classList.remove('toggle-on');
+    }
+
+    updateUndoButton();
+
+    // Court: position layout [4,3,2,5,6,1] = top-left -> bottom-right
+    const positionOrder = [4, 3, 2, 5, 6, 1];
+    const court = document.getElementById('court');
+    court.innerHTML = '';
+    const pending = state.pendingSub;
+
+    for (let i = 0; i < 6; i++) {
+      const posNumber = positionOrder[i];
+      const cell = document.createElement('div');
+      cell.className = 'court-cell';
+
+      const label = document.createElement('div');
+      label.className = 'pos-label';
+      label.textContent = "Pos " + posNumber;
+      cell.appendChild(label);
+
+      const playerId = getPlayerIdAtPosition(posNumber);
+      if (!playerId) {
+        const emptyDiv = document.createElement('div');
+        emptyDiv.className = 'player-card empty';
+        emptyDiv.textContent = 'Empty';
+        cell.appendChild(emptyDiv);
+      } else {
+        const player = getPlayerById(playerId);
+        const card = document.createElement('div');
+        card.className = 'player-card';
+        card.dataset.playerId = playerId;
+        card.dataset.group = 'court';
+
+        if (pending && pending.group === 'court' && pending.playerId === playerId) {
+          card.classList.add('sub-pending');
+        }
+
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'player-name';
+        nameDiv.textContent = player.name;
+
+        const metaDiv = buildPlayerMeta(player);
+
+        card.appendChild(nameDiv);
+        card.appendChild(metaDiv);
+
+        card.addEventListener('click', () => handlePlayerClick('court', playerId));
+
+        cell.appendChild(card);
+      }
+
+      court.appendChild(cell);
+    }
+
+    // Bench
+    const benchList = document.getElementById('bench-list');
+    benchList.innerHTML = '';
+
+    const notYetIn = benchPlayersNotYetIn();
+
+    state.bench.forEach(id => {
+      const player = getPlayerById(id);
+      if (!player) return;
+      const card = document.createElement('div');
+      card.className = 'player-card';
+      card.dataset.playerId = id;
+      card.dataset.group = 'bench';
+
+      if (pending && pending.group === 'bench' && pending.playerId === id) {
+        card.classList.add('sub-pending');
+      }
+
+      const nameDiv = document.createElement('div');
+      nameDiv.className = 'player-name';
+      nameDiv.textContent = player.name;
+
+      const metaDiv = buildPlayerMeta(player);
+
+      card.appendChild(nameDiv);
+      card.appendChild(metaDiv);
+
+      if (notYetIn.indexOf(id) !== -1) {
+        const flagDiv = document.createElement('div');
+        flagDiv.className = 'not-in-yet';
+        flagDiv.textContent = 'not in yet';
+        card.appendChild(flagDiv);
+      }
+
+      card.addEventListener('click', () => handlePlayerClick('bench', id));
+
+      benchList.appendChild(card);
+    });
+
+    const benchNote = document.getElementById('bench-participation');
+    if (notYetIn.length === 0) {
+      benchNote.textContent = state.bench.length
+        ? `All bench players have been in set ${state.setNumber}.`
+        : '';
+    } else {
+      benchNote.textContent =
+        `${notYetIn.length} not in set ${state.setNumber} yet: ` +
+        notYetIn.map(getPlayerName).join(', ');
+    }
+
+    // Game log (subs + set ends)
+    const subsLog = document.getElementById('subs-log-list');
+    subsLog.innerHTML = '';
+    state.substitutions.forEach(entry => {
+      const div = document.createElement('div');
+      div.className = 'sub-entry';
+
+      if (entry.kind === 'setEnd') {
+        div.textContent = `End Set ${entry.setNumber}: ${entry.score}`;
+      } else {
+        // substitution (backward compatible with older saves)
+        const inName = getPlayerName(entry.inId);
+        const outName = getPlayerName(entry.outId);
+        div.textContent = `Set ${entry.setNumber} @ ${entry.score}: ${inName} in for ${outName}`;
+      }
+
+      subsLog.appendChild(div);
+    });
+
+    // Save current state automatically & refresh saved list UI
+    saveAutoState();
+    refreshSavedGamesDropdown();
+  }
+
+  // --------- Event wiring ---------
+
+  document.addEventListener('DOMContentLoaded', () => {
+    // Try to restore previous automatic state first
+    loadAutoStateIfAny();
+
+    document.getElementById('load-lineup-btn').addEventListener('click', loadLineupFromTextarea);
+    document.getElementById('rotate-forward-btn').addEventListener('click', rotateForward);
+    document.getElementById('rotate-back-btn').addEventListener('click', rotateBackward);
+    document.getElementById('score-us-btn').addEventListener('click', () => scorePoint('us'));
+    document.getElementById('score-them-btn').addEventListener('click', () => scorePoint('them'));
+    document.getElementById('serving-indicator').addEventListener('click', toggleServing);
+    document.getElementById('sub-mode-btn').addEventListener('click', toggleSubMode);
+    document.getElementById('new-set-btn').addEventListener('click', newSet);
+    document.getElementById('reset-btn').addEventListener('click', resetApp);
+    document.getElementById('undo-btn').addEventListener('click', undoLast);
+    document.getElementById('target-input')
+      .addEventListener('change', e => setPlayingTimeTarget(e.target.value));
+
+    document.getElementById('save-game-btn').addEventListener('click', saveCurrentGameAsSnapshot);
+    document.getElementById('load-game-btn').addEventListener('click', loadSelectedSavedGame);
+    document.getElementById('delete-game-btn').addEventListener('click', deleteSelectedSavedGame);
+
+    render();
+  });
+</script>
+</body>
+</html>
