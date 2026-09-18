@@ -201,6 +201,23 @@
       justify-content: center;
     }
 
+    /* Lineup import from a QR code or link. */
+    #scan-holder {
+      margin-top: 0.3rem;
+    }
+
+    #scan-holder video {
+      width: 100%;
+      max-width: 320px;
+      border: 1px solid #444;
+      border-radius: 6px;
+      background: #000;
+    }
+
+    .scan-hint {
+      margin-top: 0.15rem;
+    }
+
     .player-name {
       font-size: 1.0rem;
       font-weight: 600;
@@ -299,6 +316,7 @@ DS 1
 DS 2"></textarea>
     <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
       <button id="load-lineup-btn" class="primary">Load / Update<br>Lineup</button>
+      <button id="scan-qr-btn" hidden>Scan lineup QR</button>
 
       <!-- Rotation buttons moved here -->
       <div>
@@ -310,6 +328,7 @@ DS 2"></textarea>
         <span id="serving-indicator" class="serving-indicator serving-us">Us</span>
       </div>
     </div>
+    <div id="scan-holder" hidden></div>
 
   </section>
 
@@ -912,6 +931,186 @@ DS 2"></textarea>
 
     render();
   });
+
+  // --------- Lineup import from a QR code or link ---------
+  //
+  // The coach builds the lineup on a laptop and scans a QR with the phone that
+  // runs this. The carrier is "<tracker url>/#import=<payload>", where payload
+  // is base64url of one player per line in serving order. A fragment is never
+  // sent to a server, and it is stripped again as soon as it is read, so the
+  // lineup does not sit in the address bar or in history.
+  //
+  // The payload carries jersey numbers and "First L." only.
+
+  const IMPORT_PREFIX = '#import=';
+
+  // RFC 4648 section 5, and tolerant of the padding a generator may omit.
+  function decodeBase64Url(payload) {
+    const raw = String(payload == null ? '' : payload).trim();
+    if (!raw || /[^A-Za-z0-9\-_=]/.test(raw)) return null;
+    let b64 = raw.replace(/-/g, '+').replace(/_/g, '/').replace(/=+$/, '');
+    while (b64.length % 4 !== 0) b64 += '=';
+    try {
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      // fatal so that bytes which are not UTF-8 fail here rather than arriving
+      // as replacement characters in somebody's name
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Lines starting with # are comments. "#set=2" says which set the lineup is
+  // for; it is reported and never treated as a player.
+  function parseImportedLineup(text) {
+    if (typeof text !== 'string') return null;
+    const lines = [];
+    let setNumber = null;
+    text.split(/\r?\n/).forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      if (trimmed.charAt(0) === '#') {
+        const m = /^#\s*set\s*=\s*(\d{1,2})\s*$/i.exec(trimmed);
+        if (m) setNumber = parseInt(m[1], 10);
+        return;
+      }
+      lines.push(trimmed);
+    });
+    if (!lines.length) return null;
+    return { lines: lines, setNumber: setNumber };
+  }
+
+  function applyImportedLineup(parsed) {
+    const input = document.getElementById('lineup-input');
+    if (!input) return;
+    input.value = parsed.lines.join('\n');
+    // the normal path, so this pushes history and Undo puts the old lineup back
+    loadLineupFromTextarea();
+  }
+
+  function processImportPayload(payload) {
+    const text = decodeBase64Url(payload);
+    const parsed = text === null ? null : parseImportedLineup(text);
+    if (!parsed) {
+      alert('That link did not hold a lineup.');
+      return false;
+    }
+    const count = parsed.lines.length;
+    const plural = count === 1 ? 'player' : 'players';
+    const setPart = parsed.setNumber ? `, set ${parsed.setNumber}` : '';
+    if (!confirm(`Load this lineup (${count} ${plural}${setPart})? Replaces the current lineup box.`)) {
+      return false;
+    }
+    applyImportedLineup(parsed);
+    return true;
+  }
+
+  function clearImportHash() {
+    try {
+      if (window.history && typeof history.replaceState === 'function') {
+        history.replaceState(null, '', location.pathname + location.search);
+        return;
+      }
+    } catch (e) {
+      // fall through
+    }
+    try { location.hash = ''; } catch (e) {}
+  }
+
+  // Runs on load and again whenever the fragment changes, so scanning a second
+  // code into an already-open tracker works.
+  function handleImportHash() {
+    const hash = String(location.hash || '');
+    if (hash.indexOf(IMPORT_PREFIX) !== 0) return false;
+    const payload = hash.slice(IMPORT_PREFIX.length);
+    // stripped first, so it is gone whether the coach accepts, cancels, or the
+    // payload was malformed
+    clearImportHash();
+    return processImportPayload(payload);
+  }
+
+  function importFromScannedUrl(url) {
+    const at = String(url == null ? '' : url).indexOf(IMPORT_PREFIX);
+    if (at === -1) {
+      alert('That link did not hold a lineup.');
+      return false;
+    }
+    return processImportPayload(String(url).slice(at + IMPORT_PREFIX.length));
+  }
+
+  // Android Chrome has BarcodeDetector; iOS opens the URL from its own camera
+  // app instead, so the button stays hidden there rather than offering
+  // something that cannot work.
+  function scanningSupported() {
+    return typeof window !== 'undefined' &&
+      typeof window.BarcodeDetector === 'function' &&
+      !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  }
+
+  function stopLineupScan(stream) {
+    const holder = document.getElementById('scan-holder');
+    if (stream) {
+      try { stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    }
+    if (holder) { holder.hidden = true; holder.innerHTML = ''; }
+  }
+
+  function startLineupScan() {
+    if (!scanningSupported()) return;
+    const holder = document.getElementById('scan-holder');
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      .then(stream => {
+        const video = document.createElement('video');
+        video.setAttribute('playsinline', '');
+        video.muted = true;
+        video.srcObject = stream;
+
+        const hint = document.createElement('div');
+        hint.className = 'small-label scan-hint';
+        hint.textContent = 'Point at the code. Tap the picture to stop.';
+
+        holder.innerHTML = '';
+        holder.appendChild(video);
+        holder.appendChild(hint);
+        holder.hidden = false;
+        holder.addEventListener('click', () => stopLineupScan(stream), { once: true });
+        video.play();
+
+        const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+        const tick = () => {
+          if (holder.hidden) return;
+          detector.detect(video).then(codes => {
+            if (codes && codes.length && codes[0].rawValue) {
+              const value = codes[0].rawValue;
+              stopLineupScan(stream);
+              importFromScannedUrl(value);
+              return;
+            }
+            setTimeout(tick, 300);
+          }).catch(() => setTimeout(tick, 300));
+        };
+        tick();
+      })
+      .catch(() => {
+        alert('No camera available on this device.');
+      });
+  }
+
+  function wireLineupImport() {
+    const scanBtn = document.getElementById('scan-qr-btn');
+    if (scanBtn && scanningSupported()) {
+      scanBtn.hidden = false;
+      scanBtn.addEventListener('click', startLineupScan);
+    }
+    window.addEventListener('hashchange', handleImportHash);
+    handleImportHash();
+  }
+
+  // Registered after the main handler above, so the saved game is restored
+  // first and an imported lineup is not overwritten by it.
+  document.addEventListener('DOMContentLoaded', wireLineupImport);
 </script>
 </body>
 </html>
